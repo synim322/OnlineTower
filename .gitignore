@@ -1,37 +1,75 @@
-# Ignore all files by default, but scan all directories.
-*
-!*/
+# ============================================================
+# Unreal Engine
+# ============================================================
 
-# Do not ignore git files in the root of the repo.
-!/.git*
+# Generated build folders
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
 
-# Do not ignore current project's `.uproject`.
-!/*.uproject
+# Unreal generated folders anywhere in repository
+**/Binaries/
+**/DerivedDataCache/
+**/Intermediate/
+**/Saved/
 
-# Do not ignore source, config and plugins dirs.
-!/Source/**
-!/Config/**
-!/Plugins/**
+# ============================================================
+# Visual Studio / Rider / IDE
+# ============================================================
 
-# Only allow .uasset and .umap files from /Content dir.
-# They're tracked by git-lfs, don't forget to track other
-# files if adding them here.
-!/Content/**/*.uasset
-!/Content/**/*.umap
+.vs/
+**/.vs/
 
-# Allow any files from /RawContent dir.
-# Any file in /RawContent dir will be managed by git lfs.
-!/RawContent/**/*
+.idea/
+**/.idea/
 
-# OS/platform generated files.
+.vscode/
+**/.vscode/
+
+# Visual Studio generated files
+*.sln
+*.suo
+*.user
+*.userprefs
+*.VC.db
+*.VC.opendb
+*.opendb
+*.db
+
+# Build/debug files
+*.pdb
+*.obj
+*.pch
+*.ipch
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+
+# ============================================================
+# Unreal Engine generated files
+# ============================================================
+
+*.opensdf
+*.sdf
+
+# Unreal crash / log files
+*.log
+*.dmp
+
+# ============================================================
+# Operating system
+# ============================================================
 
 # Windows
-ehthumbs.db
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# Mac OS X
+# macOS
 .DS_Store
-.DS_Store?
 .AppleDouble
 .LSOverride
 ._*
@@ -40,17 +78,35 @@ Thumbs.db
 *~
 .directory
 
-# vim
-[._]*.s[a-w][a-z]
-[._]s[a-w][a-z]
-*.un~
-Session.vim
-.netrwhist
+# ============================================================
+# Temporary files
+# ============================================================
 
-# Visual Studio
-.vs
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
 
-# Unreal generated files inside plugins
-/Plugins/**/Binaries/
-/Plugins/**/Intermediate/
-/Plugins/**/Saved/
+# ============================================================
+# Optional local Unreal files
+# ============================================================
+
+# Local build configuration
+Build/Receipts/
+
+# ============================================================
+# IMPORTANT
+# ============================================================
+
+# Source code IS tracked
+# Config IS tracked
+# Content IS tracked
+# Plugins source/assets ARE tracked
+# Documentation IS tracked
+#
+# Example repository layout:
+#
+# OnlineTower/
+# Docs/
+# README.md
