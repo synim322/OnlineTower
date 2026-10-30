@@ -1,0 +1,12 @@
+# Tower environment direction v1
+
+Generated with built-in image_gen on 2026-10-30. Image: `TowerEnvironmentDirection-v1.png`.
+
+Purpose: concept reference only, not an Unreal screenshot or a ready game texture. Four panels show office hub, mountain duel arena, science-fantasy corridor and desert finale. Inspected visually: all four environments present, office ceiling visible, arena sky open, corridor ribs readable, desert shrubs and mountain perimeter visible. Corridor exterior opening is an artistic option, not a requirement to build a canyon. Geometry density and dimensions are aspirational and must be adapted to the actual game layout.
+
+Format: opaque raster concept sheet; use as sRGB reference. Do not import as a PBR material or claim its lighting is verified in engine.
+
+Prompt:
+
+Use case: stylized-concept. Asset type: game environment concept sheet, one landscape image with four equally sized panels, no text. Primary request: an original cohesive art direction sheet for OnlineTower game. Panel one: enclosed modern office lobby, clearly visible continuous white ceiling with linear lamps, warm white walls, graphite door frames, light terrazzo floor, wooden reception desk, three separate office-room entrances with restrained cyan, amber and violet portal light, chairs and potted plants, playable wide walkways. Panel two: 1v1 arena on a rocky mountain summit, flat broad stone fighting platform, low stone rim, sheer cliff pedestal, layered distant mountains and open blue sky. Panel three: monumental science-fantasy corridor dungeon inspired by the sense of Xenoblade environments, original architecture, massive slanted mechanical ribs and ancient stone, dark blue-grey metal, cyan energy strips, sparse moss, visible turn into next corridor and wider combat chamber, high ceiling, traversable floor. Panel four: desert final arena, broad sandy basin, low sparse olive dry shrubs, irregular rock islands, fully encircled by a jagged mountain range, open sky, warm sun and cool shadows. Style: premium stylized game environment concept painting, clear large architectural forms, plausible buildable geometry, realistic materials, cinematic but readable lighting, no people, no UI, no captions, no logos. Frame each environment from an eye-level gameplay perspective with ample foreground path and clearly visible enclosing geometry. Do not make the office an outdoor courtyard. Do not roof the mountain arena or desert. Cohesive detailed art direction across all four panels.
+

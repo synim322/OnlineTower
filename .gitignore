@@ -29,6 +29,7 @@ Saved/
 
 # Visual Studio generated files
 *.sln
+*.slnx
 *.suo
 *.user
 *.userprefs
@@ -87,6 +88,11 @@ Desktop.ini
 *.bak
 *.swp
 *.swo
+
+# Local editor/tool state and Office lock files
+**/.codex/config.toml
+**/.obsidian/
+~$*
 
 # ============================================================
 # Optional local Unreal files

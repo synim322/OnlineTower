@@ -1,0 +1,93 @@
+{
+  "generator": "Blender 4.3.2 Python, original procedural geometry, no downloaded assets",
+  "units": "Blender meters, FBX converted to centimeters by UE import unit conversion",
+  "grid_segments": 68,
+  "assets": [
+    {
+      "name": "SM_RidgeA",
+      "vertices": 5034,
+      "triangles": 10064,
+      "bounds_cm": [
+        10000,
+        10000,
+        4612.0
+      ],
+      "pivot": "base center z=0",
+      "material_slot": "Rock",
+      "uv": "dominant-plane UV0; tiled overlap intentional; no lightmap UV",
+      "closed_manifold": true,
+      "degenerate_triangles": 0,
+      "fbx_sha256": "14acbd51e0e66621beab351842c847480a64dac5b94aaebffc88c482e2adc484"
+    },
+    {
+      "name": "SM_PeakB",
+      "vertices": 5034,
+      "triangles": 10064,
+      "bounds_cm": [
+        10000,
+        10000,
+        6512.0
+      ],
+      "pivot": "base center z=0",
+      "material_slot": "Rock",
+      "uv": "dominant-plane UV0; tiled overlap intentional; no lightmap UV",
+      "closed_manifold": true,
+      "degenerate_triangles": 0,
+      "fbx_sha256": "8d1667982bb3449fd60622d58228afb1ffa697a096a64574ecd9ab0e3685abb9"
+    },
+    {
+      "name": "SM_SaddleC",
+      "vertices": 5034,
+      "triangles": 10064,
+      "bounds_cm": [
+        10000,
+        10000,
+        3912.0
+      ],
+      "pivot": "base center z=0",
+      "material_slot": "Rock",
+      "uv": "dominant-plane UV0; tiled overlap intentional; no lightmap UV",
+      "closed_manifold": true,
+      "degenerate_triangles": 0,
+      "fbx_sha256": "eda5496ea786a130b0bdd6560b6f24775851215b051934a7965aa8fd9c1e9010"
+    },
+    {
+      "name": "SM_MesaD",
+      "vertices": 5034,
+      "triangles": 10064,
+      "bounds_cm": [
+        10000,
+        10000,
+        3212.0
+      ],
+      "pivot": "base center z=0",
+      "material_slot": "Sandstone",
+      "uv": "dominant-plane UV0; tiled overlap intentional; no lightmap UV",
+      "closed_manifold": true,
+      "degenerate_triangles": 0,
+      "fbx_sha256": "e68ee77516745e709ab196cc26f71064f1500d56a8b39bd79c79fe270eb9677b"
+    },
+    {
+      "name": "SM_CliffE",
+      "vertices": 5034,
+      "triangles": 10064,
+      "bounds_cm": [
+        10000,
+        10000,
+        4812.0
+      ],
+      "pivot": "base center z=0",
+      "material_slot": "Rock",
+      "uv": "dominant-plane UV0; tiled overlap intentional; no lightmap UV",
+      "closed_manifold": true,
+      "degenerate_triangles": 0,
+      "fbx_sha256": "ea90973229924945daf132690b009dfc33c790ed5af0bc6ad887005d81495c97"
+    }
+  ],
+  "limitations": [
+    "Not a canonical game-dev package; CLI unavailable.",
+    "UE import/render/collision validation pending coordinator.",
+    "No generated collision or LOD; background environment meshes, gameplay boundary remains separate.",
+    "Dominant-plane UV supports tiling with seams; prefer world-aligned rock material."
+  ]
+}

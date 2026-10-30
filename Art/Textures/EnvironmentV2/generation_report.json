@@ -1,0 +1,93 @@
+{
+  "Rock": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.19923534513966623,
+      0.7026877114744046
+    ],
+    "roughness_range": [
+      0.830000253124881,
+      0.9499984622001647
+    ]
+  },
+  "Sandstone": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.17347706968531884,
+      0.7663055059558143
+    ],
+    "roughness_range": [
+      0.840000253124881,
+      0.9599984622001647
+    ]
+  },
+  "Sand": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.35736068237760454,
+      0.8365564064264734
+    ],
+    "roughness_range": [
+      0.9100001687499207,
+      0.9899989748001099
+    ]
+  },
+  "Terrazzo": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.3800051808357239,
+      0.8999649286270142
+    ],
+    "roughness_range": [
+      0.3800001687499207,
+      0.45999897480010987
+    ]
+  },
+  "Wood": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.1392417126400706,
+      0.7178370717651575
+    ],
+    "roughness_range": [
+      0.5307070377332455,
+      0.6598541956135684
+    ]
+  },
+  "Metal": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.23180748289907252,
+      0.40579249258109473
+    ],
+    "roughness_range": [
+      0.4200039750590804,
+      0.5399942064285278
+    ]
+  },
+  "Shrub": {
+    "size": 1024,
+    "seeded": true,
+    "periodic": true,
+    "basecolor_range": [
+      0.10560933739676838,
+      0.5477345483538599
+    ],
+    "roughness_range": [
+      0.8200002953123612,
+      0.9599982059001922
+    ]
+  }
+}
