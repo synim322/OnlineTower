@@ -1,0 +1,57 @@
+[
+  {
+    "file": "SM_CliffE.fbx",
+    "roundtrip_bounds_cm": [
+      10000.0,
+      10000.0,
+      4812.0
+    ],
+    "triangles": 10064,
+    "uv_channels": 1,
+    "material_slots": 1
+  },
+  {
+    "file": "SM_MesaD.fbx",
+    "roundtrip_bounds_cm": [
+      10000.0,
+      10000.0,
+      3212.0
+    ],
+    "triangles": 10064,
+    "uv_channels": 1,
+    "material_slots": 1
+  },
+  {
+    "file": "SM_PeakB.fbx",
+    "roundtrip_bounds_cm": [
+      10000.0,
+      10000.0,
+      6512.0
+    ],
+    "triangles": 10064,
+    "uv_channels": 1,
+    "material_slots": 1
+  },
+  {
+    "file": "SM_RidgeA.fbx",
+    "roundtrip_bounds_cm": [
+      10000.0,
+      10000.0,
+      4612.0
+    ],
+    "triangles": 10064,
+    "uv_channels": 1,
+    "material_slots": 1
+  },
+  {
+    "file": "SM_SaddleC.fbx",
+    "roundtrip_bounds_cm": [
+      10000.0,
+      10000.0,
+      3912.0
+    ],
+    "triangles": 10064,
+    "uv_channels": 1,
+    "material_slots": 1
+  }
+]
