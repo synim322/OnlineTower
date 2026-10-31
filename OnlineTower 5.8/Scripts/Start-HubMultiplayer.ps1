@@ -5,7 +5,9 @@ param(
     [switch]$Automated
 )
 $ErrorActionPreference = 'Stop'
-# Legacy all-in-one multiplayer sandbox. Separate-map instance routing is not implemented yet.
+# Current account/party integration probe owns an isolated backend and database.
+if ($Automated) { & (Join-Path $PSScriptRoot 'Test-PartyMultiplayer.ps1') -EngineRoot $EngineRoot -Port $Port; return }
+# Interactive clients require Start-LocalBackend.cmd for account login.
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $projectFile = Join-Path $projectRoot 'OnlineTower.uproject'
 $editor = Join-Path $EngineRoot 'Engine/Binaries/Win64/UnrealEditor.exe'
@@ -19,13 +21,13 @@ $clientLogs = @()
 $ownedProcesses = @()
 $common = '-unattended -nosound -NoSplash -ddc=InstalledNoZenLocalFallback -ExecCmds="t.MaxFPS 60"'
 try {
-    $serverArgs = '"{0}" /Game/Maps/Mainlvl?game=/Script/OnlineTower.TowerHubGameMode -server -nullrhi -port={1} {2} -abslog="{3}"' -f $projectFile,$Port,$common,$serverLog
+    $serverArgs = '"{0}" /Game/Maps/Hub/L_Hub?game=/Script/OnlineTower.TowerHubGameMode -server -nullrhi -port={1} {2} -abslog="{3}"' -f $projectFile,$Port,$common,$serverLog
     $serverProcess = Start-Process -FilePath $editor -ArgumentList $serverArgs -WindowStyle Hidden -PassThru
     $ownedProcesses += $serverProcess
     $ready = $false
     for ($attempt=0; $attempt -lt 45; $attempt++) {
         if ($serverProcess.HasExited) { throw "Server exited. See $serverLog" }
-        if ((Test-Path $serverLog) -and (Select-String -Path $serverLog -Pattern 'Bringing World .*Mainlvl.*up for play' -Quiet)) { $ready=$true; break }
+        if ((Test-Path $serverLog) -and (Select-String -Path $serverLog -Pattern 'Bringing World .*L_Hub.*up for play' -Quiet)) { $ready=$true; break }
         Start-Sleep -Seconds 1
     }
     if (-not $ready) { throw "Server did not load the hub. See $serverLog" }

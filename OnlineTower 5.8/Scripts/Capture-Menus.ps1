@@ -1,13 +1,13 @@
 param(
     [string]$EngineRoot='C:/Program Files/Epic Games/UE_5.8',
-    [ValidateSet('Main','Create','Settings','HUD','Pause','PauseSettings')][string]$View='Main'
+    [ValidateSet('Main','Create','Settings','HUD','Pause','PauseSettings','Online')][string]$View='Main'
 )
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
 $editor=Join-Path $EngineRoot 'Engine/Binaries/Win64/UnrealEditor.exe'
 $project=Join-Path $projectRoot 'OnlineTower.uproject'
 $log=Join-Path $projectRoot "Saved/Logs/Menu-$View.log"
-$isHub=$View -in @('HUD','Pause','PauseSettings')
+$isHub=$View -in @('HUD','Pause','PauseSettings','Online')
 $map=if($isHub){'/Game/Maps/Hub/L_Hub'}else{'/Game/Maps/Frontend/L_MainMenu'}
 $flags=switch($View){
     'Main' {'-TowerMenuScreenshot -TowerMenuPage=0'}
@@ -16,6 +16,7 @@ $flags=switch($View){
     'HUD' {'-TowerScreenshot'}
     'Pause' {'-TowerScreenshot -TowerHUDPage=1'}
     'PauseSettings' {'-TowerScreenshot -TowerHUDPage=2'}
+    'Online' {'-TowerScreenshot -TowerHUDPage=3'}
 }
 $source=Join-Path $projectRoot $(if($isHub){'Saved/Screenshots/HubDungeon.png'}else{'Saved/Screenshots/MainMenu.png'})
 $destination=Join-Path $projectRoot "Saved/Screenshots/Menu-$View.png"

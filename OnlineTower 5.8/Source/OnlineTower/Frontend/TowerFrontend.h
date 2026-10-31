@@ -64,6 +64,9 @@ public:
 namespace TowerMenuUI
 {
 	void DrawSettings(AHUD* HUD);
+ void ShowOnline(APlayerController* PC);
+ void CloseOnline(APlayerController* PC);
+ bool IsOnlineOpen(APlayerController* PC);
 	bool HandleSettingsClick(APlayerController* PC, FName BoxName);
 }
 
@@ -80,7 +83,8 @@ class ONLINETOWER_API ATowerFrontendController : public APlayerController
 {
 	GENERATED_BODY()
 public:
-	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+ virtual void BeginPlay() override;
 	virtual void SetupInputComponent() override;
 	void Back();
 	// 0: home, 1: character selection, 2: creation, 3: settings.

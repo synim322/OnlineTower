@@ -1,4 +1,6 @@
 #include "TowerHub.h"
+#include "Engine/GameViewportClient.h"
+#include "Online/TowerPartyComponent.h"
 #include "TowerFrontend.h"
 #include "TowerMaps.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -38,7 +40,7 @@ ATowerFinalEnvironment::ATowerFinalEnvironment() { BuildTowerEnvironment(this,2)
 void ATowerHubEnvironment::BeginPlay() { Super::BeginPlay(); }
 ATowerHubGameMode::ATowerHubGameMode()
 {
-	DefaultPawnClass = ATowerCharacter::StaticClass();
+	bUseSeamlessTravel = true; DefaultPawnClass = ATowerCharacter::StaticClass();
 	PlayerControllerClass = ATowerHubController::StaticClass();
 	HUDClass = ATowerHubHUD::StaticClass();
 	PlayerStateClass = ATowerPlayerState::StaticClass();
@@ -93,11 +95,21 @@ void ATowerHubController::SetupInputComponent()
 	InputComponent->BindKey(EKeys::One, IE_Pressed, this, &ATowerHubController::SelectFirst);
 	InputComponent->BindKey(EKeys::Two, IE_Pressed, this, &ATowerHubController::SelectSecond);
 	InputComponent->BindKey(EKeys::Three, IE_Pressed, this, &ATowerHubController::SelectThird);
-	InputComponent->BindKey(EKeys::Tab,IE_Pressed,this,&ATowerHubController::ToggleTrials);
+	InputComponent->BindKey(EKeys::Tab,IE_Pressed,this,&ATowerHubController::ToggleCursor);
 	InputComponent->BindKey(EKeys::R,IE_Pressed,this,&ATowerHubController::UseUltimate);
 	InputComponent->BindKey(EKeys::Escape,IE_Pressed,this,&ATowerHubController::TogglePauseMenu).bExecuteWhenPaused = true;
 }
 
+ATowerHubController::ATowerHubController()
+{
+	CreateDefaultSubobject<UTowerPartyComponent>(TEXT("Party"));
+}
+void ATowerHubController::ToggleCursor()
+{
+	if (Screen != ETowerHubScreen::Gameplay) return;
+	bCursorMode = !bCursorMode;
+	SetMenuScreen(ETowerHubScreen::Gameplay);
+}
 void ATowerHubController::ToggleTrials()
 {
 	if (Screen == ETowerHubScreen::Pause || Screen == ETowerHubScreen::Settings) return;
@@ -105,7 +117,8 @@ void ATowerHubController::ToggleTrials()
 }
 void ATowerHubController::SetMenuScreen(ETowerHubScreen NewScreen)
 {
-	Screen = NewScreen;
+ TowerMenuUI::CloseOnline(this);
+	Screen = NewScreen; if (Screen != ETowerHubScreen::Gameplay) bCursorMode = false;
 	const bool bBlocked = IsGameplayInputBlocked();
 	bShowMouseCursor = bBlocked;
 	bEnableClickEvents = bBlocked;
@@ -121,7 +134,7 @@ void ATowerHubController::SetMenuScreen(ETowerHubScreen NewScreen)
 		Mode.SetHideCursorDuringCapture(false);
 		SetInputMode(Mode);
 	}
-	else SetInputMode(FInputModeGameOnly());
+	else { SetInputMode(FInputModeGameOnly()); if(auto* V=GetWorld()->GetGameViewport()) V->SetMouseCaptureMode(EMouseCaptureMode::CapturePermanently_IncludingInitialMouseDown); }
 }
 void ATowerHubController::TogglePauseMenu()
 {
@@ -176,10 +189,11 @@ void ATowerHubController::TowerRespawn()
 	if (HasAuthority()) { APawn* Old=GetPawn(); UnPossess(); GetWorld()->GetAuthGameMode()->RestartPlayer(this); if (Old) Old->Destroy(); }
 #endif
 }
+void ATowerHubController::EndPlay(const EEndPlayReason::Type Reason) { TowerMenuUI::CloseOnline(this); Super::EndPlay(Reason); }
 void ATowerHubController::BeginPlay()
 {
 	Super::BeginPlay();
-	if (IsLocalController()) if (auto* Settings=UTowerUserSettings::Get()) Settings->ApplyAudio(GetWorld());
+	if(IsLocalController()) SetMenuScreen(ETowerHubScreen::Gameplay); if (IsLocalController()) if (auto* Settings=UTowerUserSettings::Get()) Settings->ApplyAudio(GetWorld());
 #if !UE_BUILD_SHIPPING
 	int32 ArtView = -1;
 	if (IsLocalController() && FParse::Value(FCommandLine::Get(), TEXT("TowerArtView="), ArtView) && ArtView >= 0 && ArtView <= 3)
@@ -216,6 +230,7 @@ void ATowerHubController::BeginPlay()
 			FParse::Value(FCommandLine::Get(),TEXT("TowerHUDPage="),HUDPage);
 			if (HUDPage == 1) SetMenuScreen(ETowerHubScreen::Pause);
 			else if (HUDPage == 2) SetMenuScreen(ETowerHubScreen::Settings);
+			else if (HUDPage == 3) { SetMenuScreen(ETowerHubScreen::Pause); TowerMenuUI::ShowOnline(this); }
 			FScreenshotRequest::RequestScreenshot(FPaths::ProjectSavedDir()/TEXT("Screenshots/HubDungeon.png"),true,false);
 		}),20.f,false);
 	}
@@ -270,7 +285,7 @@ void ATowerHubHUD::SelectTrial(int32 Index)
 }
 void ATowerHubHUD::NotifyHitBoxClick(FName BoxName)
 {
-	Super::NotifyHitBoxClick(BoxName);
+	Super::NotifyHitBoxClick(BoxName); if(BoxName==TEXT("OnlineAccount")){TowerMenuUI::ShowOnline(PlayerOwner);return;} if(BoxName==TEXT("OpenPause")){if(auto* C=Cast<ATowerHubController>(PlayerOwner))C->TogglePauseMenu();return;}
 	if (auto* PC=Cast<ATowerHubController>(PlayerOwner))
 	{
 		if (PC->GetMenuScreen() == ETowerHubScreen::Settings)
@@ -303,8 +318,14 @@ void ATowerHubHUD::DrawHUD()
 	if (auto* PC=Cast<ATowerHubController>(PlayerOwner); PC && GetWorld()->GetTimeSeconds()<PC->TravelNoticeUntil)
 		DrawText(PC->TravelNotice,FLinearColor::Yellow,30,100,nullptr,1.f);
 	if (!Canvas || !PlayerOwner) return;
+	if (TowerMenuUI::IsOnlineOpen(PlayerOwner))
+	{
+		DrawRect(FLinearColor(.015f,.025f,.04f,.96f),0,0,Canvas->SizeX,Canvas->SizeY);
+		return;
+	}
 	auto* PC = Cast<ATowerHubController>(PlayerOwner);
 	if (!PC) return;
+ if(auto* Party=PC->FindComponentByClass<UTowerPartyComponent>()) DrawText(Party->GetStatus(),FLinearColor::Yellow,24,75);
 	const float S = FMath::Min(Canvas->SizeX/1100.f, Canvas->SizeY/760.f);
 	const float X = (Canvas->SizeX-1000*S)*.5f;
 	const float Y = (Canvas->SizeY-660*S)*.5f;
@@ -329,7 +350,7 @@ void ATowerHubHUD::DrawHUD()
 		DrawRect(FLinearColor(.015f,.025f,.04f,.86f),0,0,Canvas->SizeX,Canvas->SizeY);
 		Rect(Ink,290,110,420,440);
 		Rect(Accent,290,110,420,2);
-		Text(TEXT("ПАУЗА"),326,146,1.8f,FLinearColor::White);
+		Text(TEXT("ПАУЗА"),326,146,1.8f,FLinearColor::White); Text(TEXT("ACCOUNT / PARTY"),326,520,.9f,Accent); AddHitBox(FVector2D(X+326*S,Y+515*S),FVector2D(348*S,35*S),TEXT("OnlineAccount"),true);
 		Text(GetNetMode()==NM_Standalone ? TEXT("Можно передохнуть") : TEXT("Сетевая игра продолжается"),326,190,.85f,Muted);
 		const TCHAR* Titles[] = { TEXT("ПРОДОЛЖИТЬ"),TEXT("НАСТРОЙКИ"),TEXT("ГЛАВНОЕ МЕНЮ"),TEXT("ВЫЙТИ ИЗ ИГРЫ") };
 		const FName Names[] = { TEXT("PauseResume"),TEXT("PauseSettings"),TEXT("PauseMain"),TEXT("PauseQuit") };
@@ -344,7 +365,15 @@ void ATowerHubHUD::DrawHUD()
 	}
 	if (!PC->IsTrialMenuOpen())
 	{
-        DrawText(TEXT("ESC  Меню    TAB  Испытания"),Muted,24*S,24*S,GEngine->GetSmallFont(),.9f*S);
+        const FVector2D PausePosition(Canvas->SizeX-184*S,16*S), PauseSize(160*S,44*S);
+        float MouseX=0,MouseY=0;
+        const bool bHover=PC->bShowMouseCursor && PC->GetMousePosition(MouseX,MouseY) &&
+            MouseX>=PausePosition.X && MouseX<=PausePosition.X+PauseSize.X &&
+            MouseY>=PausePosition.Y && MouseY<=PausePosition.Y+PauseSize.Y;
+        DrawRect(bHover ? FLinearColor(.10f,.25f,.31f,1.f) : Ink,PausePosition.X,PausePosition.Y,PauseSize.X,PauseSize.Y);
+        DrawText(TEXT("ПАУЗА"),Accent,PausePosition.X+22*S,PausePosition.Y+12*S,GEngine->GetMediumFont(),S);
+        AddHitBox(PausePosition,PauseSize,TEXT("OpenPause"),true);
+        DrawText(TEXT("ESC  Меню    TAB  Курсор    E  Испытания"),Muted,24*S,24*S,GEngine->GetSmallFont(),.9f*S);
         auto* PS=PC->GetPlayerState<ATowerPlayerState>();
         if (PS)
         {
@@ -402,5 +431,5 @@ void ATowerHubHUD::DrawHUD()
 	}
 	Rect(FLinearColor(.12f,.15f,.18f),36,506,928,62);
 	Text(TEXT("ЗАКРОЙ МЕНЮ И ВОЙДИ В СВЕТЯЩИЙСЯ ПОРТАЛ"),58,526,1.f,Accent);
-	Text(TEXT("Выбор: мышь или 1 / 2 / 3     Закрыть: E / Tab / Esc"),36,607,.9f,Accent);
+	Text(TEXT("Выбор: мышь или 1 / 2 / 3     Закрыть: E / Esc"),36,607,.9f,Accent);
 }

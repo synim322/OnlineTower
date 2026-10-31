@@ -53,6 +53,11 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return Abilities; }
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out) const override;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UAbilitySystemComponent> Abilities;
+	virtual void CopyProperties(APlayerState* PlayerState) override;
+	UPROPERTY(Replicated) FString AccountId;
+	UPROPERTY(Replicated) FString AccountUsername;
+	UPROPERTY(Replicated) FGuid PartyId;
+	UPROPERTY(Replicated) int32 PartyLeaderId = -1;
 	UPROPERTY() TObjectPtr<UTowerAttributes> Attributes;
 	UPROPERTY(Replicated) TArray<int32> SkillIds;
 	UPROPERTY(Replicated) TArray<float> ReadyAt;

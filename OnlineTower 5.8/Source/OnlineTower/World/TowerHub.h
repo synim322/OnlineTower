@@ -70,17 +70,21 @@ class ONLINETOWER_API ATowerHubController : public APlayerController
 {
 	GENERATED_BODY()
 public:
+	ATowerHubController();
+	void ToggleCursor();
+	bool bCursorMode = false;
 	virtual void SetupInputComponent() override;
 	UFUNCTION(Exec) void ToggleTrials();
 	void SelectFirst();
 	void SelectSecond();
 	void SelectThird();
 	void UseUltimate();
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float Delta) override;
 	UFUNCTION(Exec) void TowerRespawn();
 	bool IsTrialMenuOpen() const { return Screen == ETowerHubScreen::Trials; }
-	bool IsGameplayInputBlocked() const { return Screen != ETowerHubScreen::Gameplay; }
+	bool IsGameplayInputBlocked() const { return bCursorMode || Screen != ETowerHubScreen::Gameplay; }
 	ETowerHubScreen GetMenuScreen() const { return Screen; }
 	void TogglePauseMenu();
 	void SetMenuScreen(ETowerHubScreen NewScreen);

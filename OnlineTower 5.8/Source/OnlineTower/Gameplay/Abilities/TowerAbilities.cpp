@@ -55,6 +55,20 @@ ATowerPlayerState::ATowerPlayerState()
 void ATowerPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps); DOREPLIFETIME(ATowerPlayerState,SkillIds); DOREPLIFETIME(ATowerPlayerState,ReadyAt);
+	DOREPLIFETIME(ATowerPlayerState,AccountId); DOREPLIFETIME(ATowerPlayerState,AccountUsername);
+	DOREPLIFETIME(ATowerPlayerState,PartyId); DOREPLIFETIME(ATowerPlayerState,PartyLeaderId);
+}
+void ATowerPlayerState::CopyProperties(APlayerState* PlayerState)
+{
+	Super::CopyProperties(PlayerState);
+	if (auto* Other = Cast<ATowerPlayerState>(PlayerState))
+	{
+		Other->AccountId = AccountId; Other->AccountUsername = AccountUsername;
+		Other->PartyId = PartyId; Other->PartyLeaderId = PartyLeaderId;
+		Other->SkillIds = SkillIds;
+		// A newly created PlayerState starts the training destination with ready abilities.
+		Other->ReadyAt.Init(0,SkillIds.Num());
+	}
 }
 float ATowerPlayerState::ServerTime() const { const auto* GS=GetWorld()->GetGameState(); return GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds(); }
 float ATowerPlayerState::Health() const { return Attributes->Health.GetCurrentValue(); }
@@ -75,9 +89,10 @@ void ATowerPlayerState::InitializeCharacter(AActor* Avatar)
 			SkillIds.Add(GetDefault<UTowerAbilityPool>()->Skills.Num()-1);
 		}
 		ReadyAt.Init(0,SkillIds.Num());
-		for (int32 Id:SkillIds) Handles.Add(Abilities->GiveAbility(FGameplayAbilitySpec(UTowerCombatAbility::StaticClass(),Id+1)));
 		UE_LOG(LogTemp,Display,TEXT("TOWER_LOADOUT Player=%d Skills=%s"),GetPlayerId(),*FString::JoinBy(SkillIds,TEXT(","),[](int32 Id){return FString::FromInt(Id);}));
 	}
+	if (Handles.IsEmpty())
+		for (int32 Id:SkillIds) Handles.Add(Abilities->GiveAbility(FGameplayAbilitySpec(UTowerCombatAbility::StaticClass(),Id+1)));
 	Abilities->SetNumericAttributeBase(UTowerAttributes::GetHealthAttribute(),100);
 }
 void ATowerPlayerState::ChangeHealth(float Amount)

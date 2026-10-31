@@ -1,4 +1,17 @@
 #include "TowerFrontend.h"
+#include "Online/TowerAccountSubsystem.h"
+#include "Online/TowerPartyComponent.h"
+#include "Engine/GameViewportClient.h"
+#include "GameFramework/GameStateBase.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SScrollBox.h"
+#include "Widgets/SViewport.h"
+#include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Text/STextBlock.h"
+#include "Widgets/SBoxPanel.h"
+#include "Styling/CoreStyle.h"
 #include "TowerMaps.h"
 #include "TowerAbilities.h"
 #include "AudioDevice.h"
@@ -212,10 +225,15 @@ void ATowerFrontendController::SetupInputComponent()
 {
 	Super::SetupInputComponent(); InputComponent->BindKey(EKeys::Escape,IE_Pressed,this,&ATowerFrontendController::Back);
 }
-void ATowerFrontendController::Back() { Page=Page==2 ? 1 : 0; Message.Empty(); }
+void ATowerFrontendController::Back() { TowerMenuUI::CloseOnline(this); Page=Page==2 ? 1 : 0; Message.Empty(); }
 void ATowerFrontendHUD::DrawHUD()
 {
 	Super::DrawHUD(); if(!Canvas) return;
+	if (TowerMenuUI::IsOnlineOpen(PlayerOwner))
+	{
+		DrawRect(FLinearColor(.025f,.035f,.05f,1.f),0,0,Canvas->SizeX,Canvas->SizeY);
+		return;
+	}
 	auto* PC=Cast<ATowerFrontendController>(PlayerOwner); auto* GI=GetGameInstance<UTowerGameInstance>(); if(!PC || !GI) return;
 	DrawRect(Ink,0,0,Canvas->SizeX,Canvas->SizeY); FMenuDraw D(this);
 	D.Rect(Accent,0,0,3,660); D.Text(TEXT("ONLINE TOWER"),60,15,1,Accent);
@@ -262,10 +280,12 @@ void ATowerFrontendHUD::DrawHUD()
 	if(PC->Page!=0) D.Button(TEXT("Back"),TEXT("Назад / Esc"),60,594,300);
 	const FString Error=!PC->Message.IsEmpty() ? PC->Message : GI->GetProfileError();
 	if(!Error.IsEmpty()) D.Text(Error,60,565,.8f,FLinearColor(1,.5f,.4f));
+	DrawText(TEXT("АККАУНТ / СЕТЕВАЯ ИГРА"),FLinearColor::White,24,24);
+	AddHitBox(FVector2D(20,20),FVector2D(290,35),TEXT("OnlineAccount"),true);
 }
 void ATowerFrontendHUD::NotifyHitBoxClick(FName BoxName)
 {
-	Super::NotifyHitBoxClick(BoxName);
+	Super::NotifyHitBoxClick(BoxName); if(BoxName==TEXT("OnlineAccount")){TowerMenuUI::ShowOnline(PlayerOwner);return;}
 	auto* PC=Cast<ATowerFrontendController>(PlayerOwner); auto* GI=GetGameInstance<UTowerGameInstance>(); if(!PC || !GI) return;
 	if(PC->Page==3 && TowerMenuUI::HandleSettingsClick(PC,BoxName)) return;
 	PC->Message.Empty();
@@ -281,4 +301,177 @@ void ATowerFrontendHUD::NotifyHitBoxClick(FName BoxName)
 	else if(BoxName==TEXT("Quit")) UKismetSystemLibrary::QuitGame(this,PC,EQuitPreference::Quit,false);
 	else for(int32 I=0;I<GI->GetCharacters().Num();++I)
 		if(BoxName==FName(*FString::Printf(TEXT("Character%d"),I))) if(!GI->SelectCharacter(GI->GetCharacters()[I].Id)) PC->Message=GI->GetProfileError();
+}
+
+
+namespace
+{
+TMap<TWeakObjectPtr<APlayerController>, TSharedPtr<SWidget>> OnlinePanels;
+const FTextBlockStyle& OnlineTextStyle()
+{
+    static const FTextBlockStyle Style = FTextBlockStyle()
+        .SetFont(FCoreStyle::GetDefaultFontStyle("Regular", 18))
+        .SetColorAndOpacity(FLinearColor::White);
+    return Style;
+}
+}
+
+bool TowerMenuUI::IsOnlineOpen(APlayerController* PC)
+{
+    return OnlinePanels.Contains(PC);
+}
+
+void TowerMenuUI::CloseOnline(APlayerController* PC)
+{
+    TSharedPtr<SWidget>* Existing = OnlinePanels.Find(PC);
+    if (!Existing) return;
+    if (PC && PC->GetWorld())
+    {
+        if (auto* Viewport = PC->GetWorld()->GetGameViewport(); Viewport && PC->GetLocalPlayer())
+        {
+            if (Existing->IsValid()) Viewport->RemoveViewportWidgetForPlayer(PC->GetLocalPlayer(), Existing->ToSharedRef());
+            if (PC->bShowMouseCursor)
+            {
+                FInputModeGameAndUI Mode;
+                Mode.SetHideCursorDuringCapture(false);
+                Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+                Mode.SetWidgetToFocus(Viewport->GetGameViewportWidget());
+                PC->SetInputMode(Mode);
+            }
+            else PC->SetInputMode(FInputModeGameOnly());
+        }
+    }
+    OnlinePanels.Remove(PC);
+}
+
+void ATowerFrontendController::EndPlay(const EEndPlayReason::Type Reason)
+{
+    TowerMenuUI::CloseOnline(this);
+    Super::EndPlay(Reason);
+}
+
+void TowerMenuUI::ShowOnline(APlayerController* PC)
+{
+    if (!PC || !PC->GetLocalPlayer() || !PC->GetWorld()->GetGameViewport()) return;
+    CloseOnline(PC);
+    auto* AccountObject = PC->GetGameInstance()->GetSubsystem<UTowerAccountSubsystem>();
+    if (!AccountObject) return;
+    TWeakObjectPtr<UTowerAccountSubsystem> Account(AccountObject);
+    TWeakObjectPtr<APlayerController> Owner(PC);
+    auto Rows = SNew(SVerticalBox);
+    auto Name = SNew(SEditableTextBox).Font(OnlineTextStyle().Font).HintText(FText::FromString(TEXT("Имя аккаунта (3–24: A–Z, 0–9, _)")));
+    auto Password = SNew(SEditableTextBox).Font(OnlineTextStyle().Font).IsPassword(true).HintText(FText::FromString(TEXT("Пароль (8–128 символов)")));
+    Rows->AddSlot().AutoHeight().Padding(0, 5)[SNew(STextBlock).Font(OnlineTextStyle().Font).Text(FText::FromString(TEXT("АККАУНТ И ГРУППА")))];
+    Rows->AddSlot().AutoHeight().Padding(0, 3)[Name];
+    Rows->AddSlot().AutoHeight().Padding(0, 3)[Password];
+    Rows->AddSlot().AutoHeight().Padding(0, 5)
+    [
+        SNew(STextBlock).Font(OnlineTextStyle().Font).AutoWrapText(true).Text_Lambda([Account]
+        {
+            if (!Account.IsValid()) return FText::GetEmpty();
+            if (Account->IsBusy()) return FText::FromString(TEXT("Подключение к backend…"));
+            const FString Identity = Account->IsLoggedIn() ? TEXT("Аккаунт: ") + Account->GetUsername() : TEXT("Вход не выполнен");
+            return FText::FromString(Identity + TEXT("\n") + Account->GetLastError());
+        })
+    ];
+    auto Add = [&Rows](const FString& Label, TFunction<void()> Action, TAttribute<bool> Enabled = true)
+    {
+        Rows->AddSlot().AutoHeight().Padding(0, 2)
+        [SNew(SButton).TextStyle(&OnlineTextStyle()).Text(FText::FromString(Label)).IsEnabled(Enabled).OnClicked_Lambda([Action]
+        { Action(); return FReply::Handled(); })];
+    };
+    const TAttribute<bool> CanAuthenticate = TAttribute<bool>::CreateLambda([Account]
+    { return Account.IsValid() && !Account->IsBusy() && !Account->IsLoggedIn(); });
+    Add(TEXT("Зарегистрироваться"), [Account, Name, Password]
+    {
+        if (Account.IsValid()) Account->Register(Name->GetText().ToString(), Password->GetText().ToString());
+        Password->SetText(FText::GetEmpty());
+    }, CanAuthenticate);
+    Add(TEXT("Войти"), [Account, Name, Password]
+    {
+        if (Account.IsValid()) Account->Login(Name->GetText().ToString(), Password->GetText().ToString());
+        Password->SetText(FText::GetEmpty());
+    }, CanAuthenticate);
+    Add(TEXT("Выйти из аккаунта"), [Account] { if (Account.IsValid()) Account->Logout(); },
+        TAttribute<bool>::CreateLambda([Account] { return Account.IsValid() && Account->IsLoggedIn(); }));
+    Add(TEXT("Подключиться к локальному серверу"), [Account] { if (Account.IsValid()) Account->ConnectLocal(); },
+        TAttribute<bool>::CreateLambda([Account, Owner]
+        { return Account.IsValid() && Account->IsLoggedIn() && Owner.IsValid() && Owner->GetNetMode() == NM_Standalone; }));
+
+    auto PartyRows = SNew(SVerticalBox);
+    Rows->AddSlot().AutoHeight().Padding(0, 8)[PartyRows];
+    TWeakPtr<SVerticalBox> WeakRows = PartyRows;
+    auto Refresh = [Owner, WeakRows]
+    {
+        if (!Owner.IsValid() || !WeakRows.IsValid()) return;
+        auto GroupRows = WeakRows.Pin();
+        GroupRows->ClearChildren();
+        auto AddPartyButton = [GroupRows](const FString& Label, TFunction<void()> Action)
+        {
+            GroupRows->AddSlot().AutoHeight().Padding(0, 2)
+            [SNew(SButton).TextStyle(&OnlineTextStyle()).Text(FText::FromString(Label)).OnClicked_Lambda([Action]
+            { Action(); return FReply::Handled(); })];
+        };
+        auto* Controller = Owner.Get();
+        auto* Component = Controller->FindComponentByClass<UTowerPartyComponent>();
+        if (!Component) return;
+        TWeakObjectPtr<UTowerPartyComponent> Party(Component);
+        GroupRows->AddSlot().AutoHeight().Padding(0, 3)
+        [SNew(STextBlock).Font(OnlineTextStyle().Font).AutoWrapText(true).Text_Lambda([Party]
+        { return FText::FromString(Party.IsValid() ? Party->GetStatus() : FString()); })];
+        const auto Members = Component->GetPartyMembers();
+        const auto* Self = Controller->GetPlayerState<ATowerPlayerState>();
+        GroupRows->AddSlot().AutoHeight()
+        [SNew(STextBlock).Font(OnlineTextStyle().Font).Text(FText::FromString(Members.IsEmpty() ? TEXT("Вы пока без группы") : TEXT("Участники группы:")))];
+        for (const auto* Member : Members)
+        {
+            const FString Leader = Member->PartyLeaderId == Member->GetPlayerId() ? TEXT(" (лидер)") : FString();
+            GroupRows->AddSlot().AutoHeight()
+            [SNew(STextBlock).Font(OnlineTextStyle().Font).Text(FText::FromString(Member->AccountUsername + Leader))];
+        }
+        const bool bCanInvite = Component->IsAuthenticated() && Self &&
+            (!Self->PartyId.IsValid() || Self->PartyLeaderId == Self->GetPlayerId()) && Members.Num() < 3;
+        if (bCanInvite)
+            if (auto* GS = Controller->GetWorld()->GetGameState())
+                for (APlayerState* State : GS->PlayerArray)
+                {
+                    auto* Player = Cast<ATowerPlayerState>(State);
+                    if (!Player || Player == Self || Player->AccountId.IsEmpty() || Player->PartyId.IsValid() || Player->IsInactive()) continue;
+                    const int32 Id = Player->GetPlayerId();
+                    AddPartyButton(TEXT("Пригласить: ") + Player->AccountUsername,
+                        [Party, Id] { if (Party.IsValid()) Party->Invite(Id); });
+                }
+        for (const auto& Invite : Component->GetInvites())
+        {
+            const int32 Id = Invite.InviterPlayerId;
+            AddPartyButton(TEXT("Принять приглашение: ") + Invite.InviterName,
+                [Party, Id] { if (Party.IsValid()) Party->RespondInvite(Id, true); });
+            AddPartyButton(TEXT("Отклонить: ") + Invite.InviterName,
+                [Party, Id] { if (Party.IsValid()) Party->RespondInvite(Id, false); });
+        }
+        if (!Members.IsEmpty()) AddPartyButton(TEXT("Выйти из группы"), [Party] { if (Party.IsValid()) Party->LeaveParty(); });
+    };
+    Refresh();
+    PartyRows->RegisterActiveTimer(1.f, FWidgetActiveTimerDelegate::CreateLambda([Refresh](double, float)
+    { Refresh(); return EActiveTimerReturnType::Continue; }));
+    Add(TEXT("Обновить список группы"), Refresh);
+    Add(TEXT("Закрыть"), [Owner] { if (Owner.IsValid()) CloseOnline(Owner.Get()); });
+
+    int32 Width = 1280, Height = 720;
+    PC->GetViewportSize(Width, Height);
+    auto OnlinePanel = SNew(SBorder).Padding(20).HAlign(HAlign_Center).VAlign(VAlign_Center)
+        .BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+        .BorderBackgroundColor(FLinearColor(.025f,.035f,.05f,1.f))
+    [
+        SNew(SBox).WidthOverride(FMath::Clamp(Width - 40.f, 220.f, 560.f)).HeightOverride(FMath::Clamp(Height - 60.f, 120.f, 720.f))
+        [SNew(SScrollBox) + SScrollBox::Slot()[Rows]]
+    ];
+    OnlinePanels.Add(PC, OnlinePanel);
+    PC->GetWorld()->GetGameViewport()->AddViewportWidgetForPlayer(PC->GetLocalPlayer(), OnlinePanel, 100);
+    FInputModeGameAndUI Mode;
+    Mode.SetWidgetToFocus(Name);
+    Mode.SetHideCursorDuringCapture(false);
+    Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+    PC->SetInputMode(Mode);
+    PC->bShowMouseCursor = true;
 }

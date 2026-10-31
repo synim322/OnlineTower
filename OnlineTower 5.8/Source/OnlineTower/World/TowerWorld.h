@@ -24,6 +24,8 @@ public:
 private:
 	UPROPERTY() TObjectPtr<UTextRenderComponent> Label;
 	FTimerHandle OverlapTimer;
+	bool bTravelPending = false;
+	float NextNoticeAt = 0;
 	void CheckVisitors();
 	UFUNCTION() void Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiveComponent* OtherComponent,int32 BodyIndex,bool bSweep,const FHitResult& Hit);
 };
