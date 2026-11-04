@@ -64,6 +64,9 @@ public:
 namespace TowerMenuUI
 {
 	void DrawSettings(AHUD* HUD);
+ void ShowOnline(APlayerController* PC);
+ void CloseOnline(APlayerController* PC);
+ bool IsOnlineOpen(APlayerController* PC);
 	bool HandleSettingsClick(APlayerController* PC, FName BoxName);
 }
 
@@ -80,12 +83,19 @@ class ONLINETOWER_API ATowerFrontendController : public APlayerController
 {
 	GENERATED_BODY()
 public:
-	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
+ virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	void PlayOnline();
 	virtual void SetupInputComponent() override;
 	void Back();
+	/** PIE client → host: take the multiplayer session from main menu into L_Hub. */
+	UFUNCTION(Server, Reliable) void ServerEnterHubMap();
 	// 0: home, 1: character selection, 2: creation, 3: settings.
 	int32 Page = 0;
 	FString Message;
+private:
+	bool bEnterAfterAuthentication = false;
 };
 
 UCLASS()

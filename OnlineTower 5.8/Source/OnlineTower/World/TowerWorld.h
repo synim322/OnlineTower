@@ -6,7 +6,7 @@
 class UPrimitiveComponent;
 class UTextRenderComponent;
 class UStaticMeshComponent;
-void BuildTowerEnvironment(AActor* Actor, int32 Zone = -2);
+void BuildTowerEnvironment(AActor* Actor, int32 Zone = -2, bool bIncludeGlobalLighting = true);
 FVector TowerHubOrigin();
 FVector TowerTrialLocation(int32 Trial);
 
@@ -24,6 +24,8 @@ public:
 private:
 	UPROPERTY() TObjectPtr<UTextRenderComponent> Label;
 	FTimerHandle OverlapTimer;
+	bool bTravelPending = false;
+	float NextNoticeAt = 0;
 	void CheckVisitors();
 	UFUNCTION() void Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiveComponent* OtherComponent,int32 BodyIndex,bool bSweep,const FHitResult& Hit);
 };

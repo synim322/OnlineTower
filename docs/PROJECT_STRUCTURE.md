@@ -1,5 +1,7 @@
 # Структура OnlineTower
 
+> Актуализация 2 ноября 2026: общий аудит и план команды — [RU](PROJECT_STATUS_RU.md) / [EN](PROJECT_STATUS_EN.md). Ниже сохранён срез 30 октября. После него добавлены `Online/`, backend аккаунтов, группы и совместный сетевой ServerTravel: см. [MULTIPLAYER_IMPLEMENTATION](MULTIPLAYER_IMPLEMENTATION.md). Утверждения ниже о запрете сетевого перехода устарели. Текущий EditorStartupMap — главное меню.
+
 Рабочий проект: `OnlineTower 5.8/OnlineTower.uproject`. Структура первого этажа разделяет главное меню, хаб и испытания, сохраняя единый C++ модуль `OnlineTower`. Правила игры определяет `PROJECT_DIRECTION.md`; наличие карты испытания не означает готовность матчей, наград или подбора игроков.
 
 ## Карты

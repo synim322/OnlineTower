@@ -10,12 +10,12 @@ public class OnlineTower : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		// Existing short includes remain stable within this single runtime module.
 		PublicIncludePaths.Add(ModuleDirectory);
-		foreach (string Folder in new string[] { "Frontend", "World", "Trials", "Gameplay/Character", "Gameplay/Abilities", "Gameplay/Movement" })
+		foreach (string Folder in new string[] { "Online", "Frontend", "World", "Trials", "Gameplay/Character", "Gameplay/Abilities", "Gameplay/Movement" })
 			PublicIncludePaths.Add(Path.Combine(ModuleDirectory, Folder));
 	
 		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "GameplayAbilities", "GameplayTags", "GameplayTasks" });
 
-		PrivateDependencyModuleNames.AddRange(new string[] {  });
+		PrivateDependencyModuleNames.AddRange(new string[] { "HTTP", "Json", "JsonUtilities", "Slate", "SlateCore" });
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

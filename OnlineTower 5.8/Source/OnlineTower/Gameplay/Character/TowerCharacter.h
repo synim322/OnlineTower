@@ -23,6 +23,7 @@ public:
 	UPROPERTY(Replicated) float RollReadyAt = 0;
 	UPROPERTY(Replicated) float RollStartedAt = -100;
 	float NextPortalTime = 0;
+	TWeakObjectPtr<AActor> MatchQueueBlockedPortal;
 	UFUNCTION(Server,Reliable) void ServerCast(int32 Slot);
 	UFUNCTION(Server,Reliable) void ServerRoll(FVector_NetQuantizeNormal Direction);
 	UFUNCTION(Server,Reliable) void ServerBasicAttack();

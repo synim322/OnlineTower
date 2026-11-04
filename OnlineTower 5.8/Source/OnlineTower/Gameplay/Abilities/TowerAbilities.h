@@ -53,6 +53,19 @@ public:
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override { return Abilities; }
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Out) const override;
 	UPROPERTY(VisibleAnywhere) TObjectPtr<UAbilitySystemComponent> Abilities;
+	virtual void CopyProperties(APlayerState* PlayerState) override;
+	UPROPERTY(Replicated) FString AccountId;
+	UPROPERTY(Replicated) FString AccountUsername;
+	UPROPERTY(Replicated) FGuid PartyId;
+	UPROPERTY(Replicated) int32 PartyLeaderId = -1;
+	// Social party is independent from a trial roster. Queue timestamps use server world time.
+	UPROPERTY(Replicated) FGuid MatchId;
+	UPROPERTY(Replicated) int32 QueuedTrial = -1;
+	UPROPERTY(Replicated) float QueueStartedAt = 0;
+	UPROPERTY(Replicated) int32 QueuePopulation = 0;
+	// Owner-only accept phase: >0 means a full roster is waiting for Accept within the deadline.
+	UPROPERTY(Replicated) float MatchAcceptEndsAt = 0;
+	UPROPERTY(Replicated) bool bMatchAccepted = false;
 	UPROPERTY() TObjectPtr<UTowerAttributes> Attributes;
 	UPROPERTY(Replicated) TArray<int32> SkillIds;
 	UPROPERTY(Replicated) TArray<float> ReadyAt;

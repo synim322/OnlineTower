@@ -55,6 +55,26 @@ ATowerPlayerState::ATowerPlayerState()
 void ATowerPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps); DOREPLIFETIME(ATowerPlayerState,SkillIds); DOREPLIFETIME(ATowerPlayerState,ReadyAt);
+	DOREPLIFETIME(ATowerPlayerState,AccountId); DOREPLIFETIME(ATowerPlayerState,AccountUsername);
+	DOREPLIFETIME(ATowerPlayerState,PartyId); DOREPLIFETIME(ATowerPlayerState,PartyLeaderId);
+	DOREPLIFETIME(ATowerPlayerState,MatchId);
+	DOREPLIFETIME_CONDITION(ATowerPlayerState,QueuedTrial,COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ATowerPlayerState,QueueStartedAt,COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ATowerPlayerState,QueuePopulation,COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ATowerPlayerState,MatchAcceptEndsAt,COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(ATowerPlayerState,bMatchAccepted,COND_OwnerOnly);
+}
+void ATowerPlayerState::CopyProperties(APlayerState* PlayerState)
+{
+	Super::CopyProperties(PlayerState);
+	if (auto* Other = Cast<ATowerPlayerState>(PlayerState))
+	{
+		Other->AccountId = AccountId; Other->AccountUsername = AccountUsername;
+		Other->PartyId = PartyId; Other->PartyLeaderId = PartyLeaderId;
+		Other->SkillIds = SkillIds;
+		// A newly created PlayerState starts the training destination with ready abilities.
+		Other->ReadyAt.Init(0,SkillIds.Num());
+	}
 }
 float ATowerPlayerState::ServerTime() const { const auto* GS=GetWorld()->GetGameState(); return GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds(); }
 float ATowerPlayerState::Health() const { return Attributes->Health.GetCurrentValue(); }
@@ -75,9 +95,10 @@ void ATowerPlayerState::InitializeCharacter(AActor* Avatar)
 			SkillIds.Add(GetDefault<UTowerAbilityPool>()->Skills.Num()-1);
 		}
 		ReadyAt.Init(0,SkillIds.Num());
-		for (int32 Id:SkillIds) Handles.Add(Abilities->GiveAbility(FGameplayAbilitySpec(UTowerCombatAbility::StaticClass(),Id+1)));
 		UE_LOG(LogTemp,Display,TEXT("TOWER_LOADOUT Player=%d Skills=%s"),GetPlayerId(),*FString::JoinBy(SkillIds,TEXT(","),[](int32 Id){return FString::FromInt(Id);}));
 	}
+	if (Handles.IsEmpty())
+		for (int32 Id:SkillIds) Handles.Add(Abilities->GiveAbility(FGameplayAbilitySpec(UTowerCombatAbility::StaticClass(),Id+1)));
 	Abilities->SetNumericAttributeBase(UTowerAttributes::GetHealthAttribute(),100);
 }
 void ATowerPlayerState::ChangeHealth(float Amount)
@@ -92,14 +113,14 @@ void ATowerPlayerState::ChangeHealth(float Amount)
 }
 void ATowerPlayerState::ActivateSlot(int32 Slot)
 {
-	if (HasAuthority() && Handles.IsValidIndex(Slot) && Health()>0) Abilities->TryActivateAbility(Handles[Slot]);
+	if (HasAuthority() && (GetNetMode()==NM_Standalone || !AccountId.IsEmpty()) && Handles.IsValidIndex(Slot) && Health()>0) Abilities->TryActivateAbility(Handles[Slot]);
 }
 bool ATowerPlayerState::ExecuteSkill(int32 Id)
 {
 	auto* Character=Cast<ATowerCharacter>(Abilities->GetAvatarActor());
 	const auto& Pool=GetDefault<UTowerAbilityPool>()->Skills;
 	const int32 Slot=SkillIds.Find(Id);
-	if (!HasAuthority() || !Character || Health()<=0 || !ReadyAt.IsValidIndex(Slot) || !Pool.IsValidIndex(Id) || ReadyAt[Slot]>ServerTime()) return false;
+	if (!HasAuthority() || (GetNetMode()!=NM_Standalone && AccountId.IsEmpty()) || !Character || Health()<=0 || !ReadyAt.IsValidIndex(Slot) || !Pool.IsValidIndex(Id) || ReadyAt[Slot]>ServerTime()) return false;
 	const FTowerSkill& Skill=Pool[Id];
 	ReadyAt[Slot]=ServerTime()+Skill.Cooldown;
 	const FVector Center=Character->GetActorLocation();
@@ -111,11 +132,13 @@ bool ATowerPlayerState::ExecuteSkill(int32 Id)
 		return Delta.Size()<=Skill.Radius && (Id>1 || FVector::DotProduct(Character->GetActorForwardVector(),Delta.GetSafeNormal())>.25f);
 	};
 	for (TActorIterator<ATowerPracticeDummy> It(GetWorld());It;++It)
-		if (InRange(*It)) { UGameplayStatics::ApplyDamage(*It,Skill.Damage,Character->GetController(),Character,UDamageType::StaticClass()); ++Hits; }
+		if (InRange(*It) && UGameplayStatics::ApplyDamage(*It,Skill.Damage,Character->GetController(),Character,UDamageType::StaticClass())>0) ++Hits;
 	// PvP is enabled only on the duel training platform. The hub remains a safe zone.
 	if (Character->TrialIndex==1)
 		for (TActorIterator<ATowerCharacter> It(GetWorld());It;++It)
-			if (*It!=Character && It->TrialIndex==1 && InRange(*It)) { UGameplayStatics::ApplyDamage(*It,Skill.Damage,Character->GetController(),Character,UDamageType::StaticClass()); ++Hits; }
+			if (const auto* TargetState=It->GetPlayerState<ATowerPlayerState>(); *It!=Character && It->TrialIndex==1 && InRange(*It) &&
+				(GetNetMode()==NM_Standalone || (TargetState && MatchId.IsValid() && TargetState->MatchId==MatchId)))
+				if (UGameplayStatics::ApplyDamage(*It,Skill.Damage,Character->GetController(),Character,UDamageType::StaticClass())>0) ++Hits;
 	if (Id==4 && Hits) ChangeHealth(25);
 	UE_LOG(LogTemp,Display,TEXT("TOWER_CAST Player=%d Skill=%d Hits=%d"),GetPlayerId(),Id,Hits);
 	ForceNetUpdate(); return true;

@@ -11,7 +11,7 @@ UTowerTrialCatalog::UTowerTrialCatalog()
 		Entry.MapPath=TowerMaps::Destination(Trials.Num());
 		Trials.Add(Entry);
 	};
-	Add(TEXT("Dungeon"), NSLOCTEXT("Tower", "Dungeon", "ДАНЖ"), NSLOCTEXT("Tower", "DungeonDesc", "Совместное PvE-испытание на четырёх игроков."), 4, false);
+	Add(TEXT("Dungeon"), NSLOCTEXT("Tower", "Dungeon", "ДАНЖ"), NSLOCTEXT("Tower", "DungeonDesc", "Совместное PvE на 5 игроков. Урон союзникам отключён."), 5, false);
 	Add(TEXT("Duel"), NSLOCTEXT("Tower", "Duel", "ДУЭЛЬ"), NSLOCTEXT("Tower", "DuelDesc", "PvP один на один. Побеждает сильнейший."), 2, false);
-	Add(TEXT("FloorFinal"), NSLOCTEXT("Tower", "Final", "ФИНАЛ ЭТАЖА"), NSLOCTEXT("Tower", "FinalDesc", "12 игроков. Четыре трио. Без полного трио — поражение."), 12, true);
+	Add(TEXT("FloorFinal"), NSLOCTEXT("Tower", "Final", "ФИНАЛ ЭТАЖА"), NSLOCTEXT("Tower", "FinalDesc", "Поиск на 12 игроков. Игровые правила финала пока не реализованы."), 12, false);
 }

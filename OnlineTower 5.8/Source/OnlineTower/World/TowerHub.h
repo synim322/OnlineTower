@@ -70,17 +70,22 @@ class ONLINETOWER_API ATowerHubController : public APlayerController
 {
 	GENERATED_BODY()
 public:
+	ATowerHubController();
+	void ToggleCursor();
+	bool bCursorMode = false;
+	bool bQueueMenuCursor = false;
 	virtual void SetupInputComponent() override;
 	UFUNCTION(Exec) void ToggleTrials();
 	void SelectFirst();
 	void SelectSecond();
 	void SelectThird();
 	void UseUltimate();
+	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float Delta) override;
 	UFUNCTION(Exec) void TowerRespawn();
 	bool IsTrialMenuOpen() const { return Screen == ETowerHubScreen::Trials; }
-	bool IsGameplayInputBlocked() const { return Screen != ETowerHubScreen::Gameplay; }
+	bool IsGameplayInputBlocked() const;
 	ETowerHubScreen GetMenuScreen() const { return Screen; }
 	void TogglePauseMenu();
 	void SetMenuScreen(ETowerHubScreen NewScreen);
@@ -91,6 +96,7 @@ public:
 	float TravelNoticeUntil = 0;
 private:
 	ETowerHubScreen Screen = ETowerHubScreen::Gameplay;
+	bool bAuthenticationGate = false;
 	void SelectTrial(int32 Index);
 	float ProbeAge=0;
 	bool bProbeLogged=false;

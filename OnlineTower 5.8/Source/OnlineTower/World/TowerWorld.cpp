@@ -2,6 +2,10 @@
 #include "TowerCharacter.h"
 #include "TowerMaps.h"
 #include "TowerHub.h"
+#include "TowerAbilities.h"
+#include "TowerPartyComponent.h"
+#include "Trials/TowerMatchmaking.h"
+#include "GameFramework/GameStateBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -24,7 +28,7 @@ FVector TowerHubOrigin() { return FVector(0,0,10000); }
 // Separate environments by two kilometres so adjacent runtime sets do not float in each other's sky.
 FVector TowerTrialLocation(int32 Trial) { return TowerHubOrigin()+FVector(200000, (Trial-1)*200000,120); }
 
-void BuildTowerEnvironment(AActor* Actor, int32 Zone)
+void BuildTowerEnvironment(AActor* Actor, int32 Zone, bool bIncludeGlobalLighting)
 {
     Actor->SetRootComponent(Actor->CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -335,6 +339,7 @@ void BuildTowerEnvironment(AActor* Actor, int32 Zone)
     }
 
     }
+    if (!bIncludeGlobalLighting) return;
     auto* Sun=Actor->CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("Sun"));
     Sun->SetupAttachment(Actor->GetRootComponent()); Sun->SetRelativeRotation(FRotator(-38,-35,0));
     Sun->SetAtmosphereSunLight(true); Sun->SetIntensity(6); Sun->SetLightColor(FLinearColor(1,.91,.78));
@@ -385,40 +390,96 @@ void ATowerPortal::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 }
 void ATowerPortal::UpdateLabel()
 {
-	const TCHAR* Names[]={TEXT("DUNGEON / TRAINING"),TEXT("DUEL / TRAINING"),TEXT("FINAL / TRAINING")};
+ const TCHAR* Names[]={TEXT("DUNGEON / 5 PLAYERS"),TEXT("DUEL / 1 VS 1"),TEXT("FINAL / 12 PLAYERS")};
 	Label->SetText(FText::FromString(DestinationTrial>=0 && DestinationTrial<3 ? Names[DestinationTrial] : TEXT("RETURN TO HUB")));
 }
 void ATowerPortal::Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiveComponent* OtherComponent,int32 BodyIndex,bool bSweep,const FHitResult& Hit)
 {
-	if (!HasAuthority()) return;
-	auto* Character=Cast<ATowerCharacter>(Other);
-	if (!Character || Character->NextPortalTime>GetWorld()->GetTimeSeconds()) return;
-	if (TowerMaps::GetZone(GetWorld()) != -2)
-	{
-		Character->NextPortalTime=GetWorld()->GetTimeSeconds()+3;
-		if (GetNetMode()!=NM_Standalone)
-		{
-			if (auto* PC=Cast<ATowerHubController>(Character->GetController())) PC->ClientTravelUnavailable();
-			return;
-		}
-		const FName Map=TowerMaps::Destination(DestinationTrial);
-		if (!Map.IsNone()) { UE_LOG(LogTemp,Display,TEXT("TOWER_MAP_TRAVEL Destination=%s"),*Map.ToString()); UGameplayStatics::OpenLevel(this,Map,true); }
-		return;
-	}
-	// Offset arrivals so multiple players do not appear inside each other.
-	int32 Occupants=0;
-	for (TActorIterator<ATowerCharacter> It(GetWorld());It;++It) if (*It!=Character && It->TrialIndex==DestinationTrial) ++Occupants;
-	const int32 Capacity=DestinationTrial==0 ? 4 : DestinationTrial==1 ? 2 : 12;
-	if (DestinationTrial>=0 && Occupants>=Capacity) return;
-	const FVector Arrival=Destination+FVector(0,(Occupants%4)*130-195,0);
-	if (Character->TeleportTo(Arrival,FRotator::ZeroRotator))
-	{
-		Character->TrialIndex=DestinationTrial; Character->NextPortalTime=GetWorld()->GetTimeSeconds()+2;
-		Character->ForceNetUpdate();
-		UE_LOG(LogTemp,Display,TEXT("TOWER_PORTAL Player=%s Trial=%d"),*Character->GetName(),DestinationTrial);
-	}
+ if (!HasAuthority() || bTravelPending) return;
+ auto* Character = Cast<ATowerCharacter>(Other);
+ const float Now = GetWorld()->GetTimeSeconds();
+ if (!Character || Character->NextPortalTime > Now) return;
+ auto* PC = Cast<APlayerController>(Character->GetController());
+ auto* Party = PC ? PC->FindComponentByClass<UTowerPartyComponent>() : nullptr;
+ auto Notice = [&](const FString& Message)
+ {
+  if (Party && Now >= NextNoticeAt) { Party->ClientNotice(Message); NextNoticeAt = Now + 2; }
+ };
+ if (GetNetMode()!=NM_Standalone)
+ {
+  if (!Party || !Party->IsAuthenticated()) { Notice(TEXT("Для поиска матча войдите в аккаунт.")); return; }
+  if (auto* Matchmaking=GetWorld()->GetSubsystem<UTowerMatchmakingSubsystem>())
+  {
+   if (DestinationTrial<0) Matchmaking->ReturnToHub(PC);
+   else if (Character->MatchQueueBlockedPortal.Get()!=this) Matchmaking->RequestQueue(PC,DestinationTrial);
+  }
+  return;
+ }
+ TArray<ATowerCharacter*> Group;
+ Group.Add(Character);
+ if (GetNetMode() != NM_Standalone)
+ {
+  if (!Party || !Party->IsAuthenticated()) { Notice(TEXT("Для сетевого перехода войдите в аккаунт через меню группы.")); return; }
+  const auto Members = Party->GetPartyMembers();
+  if (!Members.IsEmpty())
+  {
+   Group.Empty();
+   for (auto* Member : Members)
+   {
+    auto* Pawn = Cast<ATowerCharacter>(Member->GetPawn());
+    if (!Pawn || Member->AccountId.IsEmpty() || !IsOverlappingActor(Pawn) || Pawn->NextPortalTime > Now || Member->Health() <= 0)
+    { Notice(TEXT("Ожидание: все участники группы должны одновременно войти в этот портал.")); return; }
+    Group.Add(Pawn);
+   }
+  }
+ }
+ const int32 Capacity = DestinationTrial == 0 ? 5 : DestinationTrial == 1 ? 2 : 12;
+ if (DestinationTrial >= 0 && Group.Num() > Capacity) { Notice(TEXT("В этом испытании недостаточно мест для всей группы.")); return; }
+ if (TowerMaps::GetZone(GetWorld()) != -2)
+ {
+  const FName Map = TowerMaps::Destination(DestinationTrial);
+  if (Map.IsNone()) return;
+  if (GetNetMode() == NM_Standalone)
+  {
+   bTravelPending = true;
+   UE_LOG(LogTemp,Display,TEXT("TOWER_MAP_TRAVEL Destination=%s"),*Map.ToString());
+   UGameplayStatics::OpenLevel(this, Map, true);
+   return;
+  }
+  // One local instance: never move an unrelated group with ServerTravel.
+  if (const auto* GS = GetWorld()->GetGameState())
+   for (APlayerState* Player : GS->PlayerArray)
+    if (Player && !Player->IsInactive() && !Group.Contains(Cast<ATowerCharacter>(Player->GetPawn())))
+    { Notice(TEXT("Локальный сервер: для смены карты все подключённые игроки должны быть в одной готовой группе.")); return; }
+  bTravelPending = true;
+  for (auto* Pawn : Group) Pawn->NextPortalTime = Now + 3;
+  UE_LOG(LogTemp,Display,TEXT("TOWER_PARTY_TRAVEL Members=%d Destination=%s"),Group.Num(),*Map.ToString());
+  if (!GetWorld()->ServerTravel(Map.ToString(), true))
+  { bTravelPending = false; Notice(TEXT("Сервер не смог начать переход.")); }
+  return;
+ }
+ int32 Occupants = 0;
+ for (TActorIterator<ATowerCharacter> It(GetWorld()); It; ++It)
+  if (!Group.Contains(*It) && It->TrialIndex == DestinationTrial) ++Occupants;
+ if (DestinationTrial >= 0 && Occupants + Group.Num() > Capacity)
+ { Notice(TEXT("В испытании недостаточно свободных мест для всей группы.")); return; }
+ TArray<FVector> Arrivals;
+ for (int32 Index = 0; Index < Group.Num(); ++Index)
+ {
+  FVector Arrival = Destination + FVector(0, ((Occupants + Index) % 4) * 130 - 195, 0);
+  if (!GetWorld()->FindTeleportSpot(Group[Index], Arrival, FRotator::ZeroRotator))
+  { Notice(TEXT("Место входа занято. Попробуйте снова.")); return; }
+  Arrivals.Add(Arrival);
+ }
+ // All destinations were checked before any member moves.
+ for (int32 Index = 0; Index < Group.Num(); ++Index)
+ {
+  auto* Pawn = Group[Index];
+  Pawn->TeleportTo(Arrivals[Index], FRotator::ZeroRotator, false, true);
+  Pawn->TrialIndex = DestinationTrial; Pawn->NextPortalTime = Now + 2; Pawn->ForceNetUpdate();
+  UE_LOG(LogTemp,Display,TEXT("TOWER_PORTAL Player=%s Trial=%d"),*Pawn->GetName(),DestinationTrial);
+ }
 }
-
 ATowerPracticeDummy::ATowerPracticeDummy()
 {
 	bReplicates=true; SetReplicateMovement(true);
