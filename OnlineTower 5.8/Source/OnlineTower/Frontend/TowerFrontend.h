@@ -85,11 +85,17 @@ class ONLINETOWER_API ATowerFrontendController : public APlayerController
 public:
 	virtual void EndPlay(const EEndPlayReason::Type Reason) override;
  virtual void BeginPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
+	void PlayOnline();
 	virtual void SetupInputComponent() override;
 	void Back();
+	/** PIE client → host: take the multiplayer session from main menu into L_Hub. */
+	UFUNCTION(Server, Reliable) void ServerEnterHubMap();
 	// 0: home, 1: character selection, 2: creation, 3: settings.
 	int32 Page = 0;
 	FString Message;
+private:
+	bool bEnterAfterAuthentication = false;
 };
 
 UCLASS()

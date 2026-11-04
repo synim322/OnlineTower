@@ -150,6 +150,7 @@ void ATowerCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 void ATowerCharacter::Tick(float Delta)
 {
 	Super::Tick(Delta);
+	if (HasAuthority() && MatchQueueBlockedPortal.IsValid() && !MatchQueueBlockedPortal->IsOverlappingActor(this)) MatchQueueBlockedPortal.Reset();
 	const auto* GS=GetWorld()->GetGameState();
 	const float Time=GS ? GS->GetServerWorldTimeSeconds() : GetWorld()->GetTimeSeconds();
 	const float RollAge=Time-RollStartedAt;
@@ -172,7 +173,7 @@ void ATowerCharacter::RequestRoll()
 void ATowerCharacter::ServerRoll_Implementation(FVector_NetQuantizeNormal Direction)
 {
 	auto* PS=GetPlayerState<ATowerPlayerState>();
-	if (!PS || PS->Health()<=0 || !GetCharacterMovement()->IsMovingOnGround() || PS->ServerTime()<RollReadyAt) return;
+	if (!PS || (GetNetMode()!=NM_Standalone && PS->AccountId.IsEmpty()) || PS->Health()<=0 || !GetCharacterMovement()->IsMovingOnGround() || PS->ServerTime()<RollReadyAt) return;
 	const FVector SafeDirection=FVector(Direction).GetSafeNormal2D();
 	if (SafeDirection.IsNearlyZero()) return;
 	RollStartedAt=PS->ServerTime(); RollReadyAt=RollStartedAt+2.f;
@@ -190,7 +191,7 @@ void ATowerCharacter::AttackPressed(const FInputActionValue& Value)
 void ATowerCharacter::ServerBasicAttack_Implementation()
 {
 	auto* PS=GetPlayerState<ATowerPlayerState>();
-	if (!PS || PS->Health()<=0 || BasicReadyAt>PS->ServerTime()) return;
+	if (!PS || (GetNetMode()!=NM_Standalone && PS->AccountId.IsEmpty()) || PS->Health()<=0 || BasicReadyAt>PS->ServerTime()) return;
 	BasicReadyAt=PS->ServerTime()+.65f; MulticastSkillEffect(-1);
 	auto InRange=[this](AActor* Target)
 	{
@@ -200,7 +201,9 @@ void ATowerCharacter::ServerBasicAttack_Implementation()
 	for (TActorIterator<ATowerPracticeDummy> It(GetWorld());It;++It)
 		if (InRange(*It)) UGameplayStatics::ApplyDamage(*It,12,GetController(),this,UDamageType::StaticClass());
 	if (TrialIndex==1) for (TActorIterator<ATowerCharacter> It(GetWorld());It;++It)
-		if (*It!=this && It->TrialIndex==1 && InRange(*It)) UGameplayStatics::ApplyDamage(*It,12,GetController(),this,UDamageType::StaticClass());
+		if (const auto* TargetState=It->GetPlayerState<ATowerPlayerState>(); *It!=this && It->TrialIndex==1 && InRange(*It) &&
+			(GetNetMode()==NM_Standalone || (TargetState && PS->MatchId.IsValid() && TargetState->MatchId==PS->MatchId)))
+			UGameplayStatics::ApplyDamage(*It,12,GetController(),this,UDamageType::StaticClass());
 }
 void ATowerCharacter::MulticastSkillEffect_Implementation(int32 Id)
 {
@@ -214,6 +217,8 @@ float ATowerCharacter::TakeDamage(float Amount,const FDamageEvent& Event,AContro
 	auto* PS=GetPlayerState<ATowerPlayerState>();
 	auto* Attacker=Cast<ATowerCharacter>(Causer);
 	if (!HasAuthority() || !PS || bDying || Amount<=0 || TrialIndex!=1 || !Attacker || Attacker==this || Attacker->TrialIndex!=1) return 0;
+	const auto* AttackerState=Attacker->GetPlayerState<ATowerPlayerState>();
+	if (GetNetMode()!=NM_Standalone && (!AttackerState || !PS->MatchId.IsValid() || PS->MatchId!=AttackerState->MatchId)) return 0;
 	PS->ChangeHealth(-Amount);
 	if (PS->Health()<=0)
 	{

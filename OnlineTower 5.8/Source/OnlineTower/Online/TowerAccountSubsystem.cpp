@@ -1,10 +1,55 @@
 #include "TowerAccountSubsystem.h"
+#include "TowerOnlineHttp.h"
+#include "TowerMaps.h"
+#include "TowerFrontend.h" // TowerMenuUI::CloseOnline + ATowerFrontendController::ServerEnterHubMap
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Serialization/JsonSerializer.h"
 #include "Engine/GameInstance.h"
 #include "GameFramework/PlayerController.h"
+#include "Engine/Engine.h"
+#include "Engine/World.h"
+#include "Kismet/GameplayStatics.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
+
+namespace TowerAccountPrivate
+{
+static bool IsHubWorld(const UWorld* World)
+{
+	if (!World) return false;
+	const FString MapName = World->GetMapName();
+	return MapName.Contains(TEXT("L_Hub"));
+}
+}
+
+void UTowerAccountSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	if (GEngine)
+	{
+		GEngine->OnNetworkFailure().AddUObject(this, &UTowerAccountSubsystem::HandleNetworkFailure);
+		GEngine->OnTravelFailure().AddUObject(this, &UTowerAccountSubsystem::HandleTravelFailure);
+	}
+}
+void UTowerAccountSubsystem::Deinitialize()
+{
+	if (GEngine) { GEngine->OnNetworkFailure().RemoveAll(this); GEngine->OnTravelFailure().RemoveAll(this); }
+	++RequestGeneration;
+	Super::Deinitialize();
+}
+void UTowerAccountSubsystem::HandleNetworkFailure(UWorld* World, UNetDriver*, ENetworkFailure::Type, const FString& Error)
+{
+	if (!World || World->GetGameInstance() != GetGameInstance()) return;
+	bConnecting=false; LastError=TEXT("Не удалось подключиться к хабу. Проверьте запуск локального игрового сервера. ")+Error;
+	OnChanged.Broadcast();
+}
+void UTowerAccountSubsystem::HandleTravelFailure(UWorld* World, ETravelFailure::Type, const FString& Error)
+{
+	if (!World || World->GetGameInstance() != GetGameInstance()) return;
+	bConnecting=false; LastError=TEXT("Ошибка перехода в хаб: ")+Error; OnChanged.Broadcast();
+}
 
 void UTowerAccountSubsystem::Register(const FString& Name, const FString& Password)
 {
@@ -32,7 +77,7 @@ void UTowerAccountSubsystem::RequestAuth(const FString& Route, const FString& Na
 	FString Payload;
 	FJsonSerializer::Serialize(Body,TJsonWriterFactory<>::Create(&Payload));
 	auto Request=FHttpModule::Get().CreateRequest();
-	Request->SetURL(TEXT("http://127.0.0.1:18080/v1/auth/")+Route);
+	Request->SetURL(TowerOnlineHttp::BaseUrl()+TEXT("/v1/auth/")+Route);
 	Request->SetVerb(TEXT("POST"));
 	Request->SetHeader(TEXT("Content-Type"),TEXT("application/json"));
 	Request->SetContentAsString(Payload);
@@ -41,13 +86,8 @@ void UTowerAccountSubsystem::RequestAuth(const FString& Route, const FString& Na
 	{
 		if (Generation!=RequestGeneration) return;
 		bBusy=false;
-		TSharedPtr<FJsonObject> Json;
-		if (!bSuccess || !Response.IsValid()) LastError=TEXT("Backend unavailable. Start the local backend on port 18080.");
-		else if (!FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Response->GetContentAsString()),Json) || !Json.IsValid()) LastError=TEXT("Invalid backend response.");
-		else if (Response->GetResponseCode()<200 || Response->GetResponseCode()>=300)
-		{
-			if (!Json->TryGetStringField(TEXT("error"),LastError)) LastError=TEXT("Authentication failed.");
-		}
+		TSharedPtr<FJsonObject> Json; FString Error;
+		if (!TowerOnlineHttp::Decode(Response,bSuccess,Json,Error)) LastError=Error;
 		else
 		{
 			const TSharedPtr<FJsonObject>* User=nullptr;
@@ -65,11 +105,11 @@ void UTowerAccountSubsystem::RequestAuth(const FString& Route, const FString& Na
 }
 void UTowerAccountSubsystem::Logout()
 {
-	++RequestGeneration; bBusy=false;
+	++RequestGeneration; bBusy=false; bConnecting=false;
 	if (!Token.IsEmpty())
 	{
 		auto Request=FHttpModule::Get().CreateRequest();
-		Request->SetURL(TEXT("http://127.0.0.1:18080/v1/auth/logout"));
+		Request->SetURL(TowerOnlineHttp::BaseUrl()+TEXT("/v1/auth/logout"));
 		Request->SetVerb(TEXT("POST"));
 		Request->SetHeader(TEXT("Authorization"),TEXT("Bearer ")+Token);
 		Request->SetTimeout(10.f);
@@ -80,10 +120,70 @@ void UTowerAccountSubsystem::Logout()
 }
 void UTowerAccountSubsystem::ConnectLocal()
 {
-	if (!IsLoggedIn()) { LastError=TEXT("Sign in first."); OnChanged.Broadcast(); return; }
-	if (UWorld* World=GetWorld(); World && World->GetNetMode()!=NM_Standalone)
+	if (!IsLoggedIn()) { LastError=TEXT("Сначала войдите в аккаунт."); OnChanged.Broadcast(); return; }
+	UWorld* World = GetWorld();
+	if (!World) { LastError=TEXT("Мир ещё не готов."); OnChanged.Broadcast(); return; }
+
+	// Already on the hub map inside PIE/listen/client — release the player, do not look like a failed connect.
+	if (TowerAccountPrivate::IsHubWorld(World))
 	{
-		LastError=TEXT("Already in a multiplayer session (PIE clients connect automatically)."); OnChanged.Broadcast(); return;
+		bConnecting=false;
+		LastError.Empty();
+		OnChanged.Broadcast();
+		if (APlayerController* PC=GetGameInstance()->GetFirstLocalPlayerController())
+			TowerMenuUI::CloseOnline(PC);
+		return;
 	}
-	if (APlayerController* PC=GetGameInstance()->GetFirstLocalPlayerController()) PC->ClientTravel(TEXT("127.0.0.1:17777"),TRAVEL_Absolute);
+
+	if (bConnecting && World->GetNetMode()==NM_Standalone) return;
+
+	// PIE / multiplayer already running on the main menu: take the whole session into L_Hub.
+	if (World->GetNetMode()==NM_ListenServer)
+	{
+		bConnecting=true;
+		LastError=TEXT("Переход в хаб…");
+		OnChanged.Broadcast();
+		if (!TowerMaps::TravelToHubListen(World))
+		{
+			bConnecting=false;
+			LastError=TEXT("Не удалось начать переход в хаб. Повторите попытку.");
+			OnChanged.Broadcast();
+		}
+		return;
+	}
+	if (World->GetNetMode()==NM_Client)
+	{
+		if (ATowerFrontendController* Frontend=Cast<ATowerFrontendController>(GetGameInstance()->GetFirstLocalPlayerController()))
+		{
+			bConnecting=true;
+			LastError=TEXT("Переход в хаб вместе с хостом…");
+			OnChanged.Broadcast();
+			Frontend->ServerEnterHubMap();
+			return;
+		}
+		bConnecting=false;
+		LastError=TEXT("Нажмите «Войти в хаб» на окне хоста (Listen Server), клиенты перейдут следом.");
+		OnChanged.Broadcast();
+		return;
+	}
+
+	// Solo PIE: open hub locally. Packaged/standalone menu: join dedicated hub process.
+	if (World->WorldType==EWorldType::PIE)
+	{
+		bConnecting=true;
+		LastError=TEXT("Переход в хаб…");
+		OnChanged.Broadcast();
+		UGameplayStatics::OpenLevel(World,FName(TowerMaps::Hub),true);
+		return;
+	}
+
+	if (APlayerController* PC=GetGameInstance()->GetFirstLocalPlayerController())
+	{
+		FString Address=TEXT("127.0.0.1:17777");
+		FParse::Value(FCommandLine::Get(),TEXT("TowerServer="),Address);
+		if (Address.IsEmpty() || Address.Contains(TEXT("?")) || Address.Contains(TEXT("/")))
+		{ LastError=TEXT("Некорректный адрес игрового сервера."); OnChanged.Broadcast(); return; }
+		bConnecting=true; LastError=TEXT("Подключение к хабу…"); OnChanged.Broadcast();
+		PC->ClientTravel(Address,TRAVEL_Absolute);
+	}
 }

@@ -138,6 +138,13 @@ void ATowerHubController::SetMenuScreen(ETowerHubScreen NewScreen)
 }
 void ATowerHubController::TogglePauseMenu()
 {
+	if (TowerMenuUI::IsOnlineOpen(this))
+	{
+		// Return to pause instead of SetMenuScreen(Gameplay), which would CloseOnline + leave menus.
+		TowerMenuUI::CloseOnline(this);
+		if (Screen != ETowerHubScreen::Pause) SetMenuScreen(ETowerHubScreen::Pause);
+		return;
+	}
 	if (Screen == ETowerHubScreen::Settings) SetMenuScreen(ETowerHubScreen::Pause);
 	else SetMenuScreen(Screen == ETowerHubScreen::Gameplay ? ETowerHubScreen::Pause : ETowerHubScreen::Gameplay);
 }
@@ -236,9 +243,46 @@ void ATowerHubController::BeginPlay()
 	}
 #endif
 }
+bool ATowerHubController::IsGameplayInputBlocked() const
+{
+	if (bCursorMode || Screen != ETowerHubScreen::Gameplay || TowerMenuUI::IsOnlineOpen(const_cast<ATowerHubController*>(this))) return true;
+	if (const auto* PS=GetPlayerState<ATowerPlayerState>())
+		if (PS->QueuedTrial>=0) return true; // Queue/accept menu owns cursor and blocks combat input.
+	return false;
+}
 void ATowerHubController::Tick(float Delta)
 {
 	Super::Tick(Delta);
+	if (IsLocalController())
+	{
+		const auto* PS=GetPlayerState<ATowerPlayerState>();
+		const bool bInQueue=PS && PS->QueuedTrial>=0;
+		if (bInQueue!=bQueueMenuCursor)
+		{
+			bQueueMenuCursor=bInQueue;
+			if (Screen==ETowerHubScreen::Gameplay) SetMenuScreen(ETowerHubScreen::Gameplay); // refresh cursor/input for queue menu
+		}
+	}
+	if (IsLocalController() && GetNetMode()!=NM_Standalone)
+	{
+		UTowerAccountSubsystem* Account=GetGameInstance()->GetSubsystem<UTowerAccountSubsystem>();
+		const bool bHasAccount=Account && Account->IsLoggedIn();
+		// A player authenticated in the menu never enters the hub's login gate.
+		if (bHasAccount && Account->IsConnecting()) Account->CompleteConnection();
+		// Force login only until HTTP account exists. After login, release into gameplay.
+		if (!bHasAccount)
+		{
+			if (!bAuthenticationGate) { bAuthenticationGate=true; SetMenuScreen(ETowerHubScreen::Pause); }
+			if (!TowerMenuUI::IsOnlineOpen(this)) TowerMenuUI::ShowOnline(this);
+		}
+		else if (bAuthenticationGate)
+		{
+			bAuthenticationGate=false;
+			TowerMenuUI::CloseOnline(this);
+			SetMenuScreen(ETowerHubScreen::Gameplay);
+			Account->CompleteConnection();
+		}
+	}
 #if !UE_BUILD_SHIPPING
 	// Opt-in integration driver. Exercises the ordinary replicated movement and ability paths.
 	if (!IsLocalController() || !FParse::Param(FCommandLine::Get(),TEXT("TowerNetProbe"))) return;
@@ -285,7 +329,16 @@ void ATowerHubHUD::SelectTrial(int32 Index)
 }
 void ATowerHubHUD::NotifyHitBoxClick(FName BoxName)
 {
-	Super::NotifyHitBoxClick(BoxName); if(BoxName==TEXT("OnlineAccount")){TowerMenuUI::ShowOnline(PlayerOwner);return;} if(BoxName==TEXT("OpenPause")){if(auto* C=Cast<ATowerHubController>(PlayerOwner))C->TogglePauseMenu();return;}
+	if(BoxName==TEXT("CancelMatchSearch")) { if(auto* Party=PlayerOwner ? PlayerOwner->FindComponentByClass<UTowerPartyComponent>() : nullptr) Party->CancelMatchSearch(); return; }
+	if(BoxName==TEXT("AcceptMatchSearch")) { if(auto* Party=PlayerOwner ? PlayerOwner->FindComponentByClass<UTowerPartyComponent>() : nullptr) Party->AcceptMatchSearch(); return; }
+	Super::NotifyHitBoxClick(BoxName);
+	if (BoxName==TEXT("OnlineAccount") || BoxName==TEXT("PauseInvite"))
+	{
+		// Open social/invite without SetMenuScreen — that would CloseOnline immediately.
+		TowerMenuUI::ShowOnline(PlayerOwner);
+		return;
+	}
+	if(BoxName==TEXT("OpenPause")){if(auto* C=Cast<ATowerHubController>(PlayerOwner))C->TogglePauseMenu();return;}
 	if (auto* PC=Cast<ATowerHubController>(PlayerOwner))
 	{
 		if (PC->GetMenuScreen() == ETowerHubScreen::Settings)
@@ -329,7 +382,7 @@ void ATowerHubHUD::DrawHUD()
 	const float S = FMath::Min(Canvas->SizeX/1100.f, Canvas->SizeY/760.f);
 	const float X = (Canvas->SizeX-1000*S)*.5f;
 	const float Y = (Canvas->SizeY-660*S)*.5f;
-	const FLinearColor Ink(.035f,.05f,.075f,.97f), Accent(.2f,.85f,1.f), Muted(.62f,.7f,.78f);
+	const FLinearColor HubInk(.035f,.05f,.075f,.97f), HubAccent(.2f,.85f,1.f), HubMuted(.62f,.7f,.78f);
 	auto Rect = [&](FLinearColor Color, float A, float B, float W, float H) { DrawRect(Color,X+A*S,Y+B*S,W*S,H*S); };
 	auto Text = [&](const FString& Value, float A, float B, float Size, FLinearColor Color)
 	{
@@ -340,47 +393,87 @@ void ATowerHubHUD::DrawHUD()
 		DrawRect(FLinearColor(.015f,.025f,.04f,.96f),0,0,Canvas->SizeX,Canvas->SizeY);
 		TowerMenuUI::DrawSettings(this);
 		const FVector2D Position(24*S,Canvas->SizeY-54*S), Size(180*S,34*S);
-		DrawRect(Ink,Position.X,Position.Y,Size.X,Size.Y);
-		DrawText(TEXT("НАЗАД / ESC"),Accent,Position.X+12*S,Position.Y+7*S,GEngine->GetMediumFont(),.9f*S);
+		DrawRect(HubInk,Position.X,Position.Y,Size.X,Size.Y);
+		DrawText(TEXT("НАЗАД / ESC"),HubAccent,Position.X+12*S,Position.Y+7*S,GEngine->GetMediumFont(),.9f*S);
 		AddHitBox(Position,Size,TEXT("PauseBack"),true);
 		return;
 	}
 	if (PC->GetMenuScreen() == ETowerHubScreen::Pause)
 	{
 		DrawRect(FLinearColor(.015f,.025f,.04f,.86f),0,0,Canvas->SizeX,Canvas->SizeY);
-		Rect(Ink,290,110,420,440);
-		Rect(Accent,290,110,420,2);
-		Text(TEXT("ПАУЗА"),326,146,1.8f,FLinearColor::White); Text(TEXT("ACCOUNT / PARTY"),326,520,.9f,Accent); AddHitBox(FVector2D(X+326*S,Y+515*S),FVector2D(348*S,35*S),TEXT("OnlineAccount"),true);
-		Text(GetNetMode()==NM_Standalone ? TEXT("Можно передохнуть") : TEXT("Сетевая игра продолжается"),326,190,.85f,Muted);
-		const TCHAR* Titles[] = { TEXT("ПРОДОЛЖИТЬ"),TEXT("НАСТРОЙКИ"),TEXT("ГЛАВНОЕ МЕНЮ"),TEXT("ВЫЙТИ ИЗ ИГРЫ") };
-		const FName Names[] = { TEXT("PauseResume"),TEXT("PauseSettings"),TEXT("PauseMain"),TEXT("PauseQuit") };
-		for (int32 I=0;I<4;++I)
+		Rect(HubInk,290,90,420,560);
+		Rect(HubAccent,290,90,420,2);
+		Text(TEXT("ПАУЗА"),326,126,1.8f,FLinearColor::White);
+		Text(TEXT("Соло — портал без группы. Друг — кнопка ниже."),326,170,.8f,HubMuted);
+		const TCHAR* Titles[] = { TEXT("ПРОДОЛЖИТЬ"),TEXT("ПРИГЛАСИТЬ ДРУГА / ГРУППА"),TEXT("НАСТРОЙКИ"),TEXT("ГЛАВНОЕ МЕНЮ"),TEXT("ВЫЙТИ ИЗ ИГРЫ") };
+		const FName Names[] = { TEXT("PauseResume"),TEXT("PauseInvite"),TEXT("PauseSettings"),TEXT("PauseMain"),TEXT("PauseQuit") };
+		for (int32 I=0;I<5;++I)
 		{
-			const float Top=244+I*65;
+			const float Top=210+I*58;
 			Rect(FLinearColor(.075f,.105f,.14f),326,Top,348,48);
-			Text(Titles[I],344,Top+15,.95f,I==0 ? Accent : FLinearColor::White);
+			Text(Titles[I],344,Top+15,.9f,I<=1 ? HubAccent : FLinearColor::White);
 			AddHitBox(FVector2D(X+326*S,Y+Top*S),FVector2D(348*S,48*S),Names[I],true);
 		}
 		return;
 	}
 	if (!PC->IsTrialMenuOpen())
 	{
+		auto* PS=PC->GetPlayerState<ATowerPlayerState>();
+		if (PS && PS->QueuedTrial>=0)
+		{
+			const TCHAR* TrialNames[]={TEXT("Данж"),TEXT("Дуэль"),TEXT("Финал")};
+			const int32 Cap=PS->QueuedTrial==0?5:PS->QueuedTrial==1?2:12;
+			const float SearchSec=FMath::Max(0.f,PS->ServerTime()-PS->QueueStartedAt);
+			const int32 SearchMin=FMath::FloorToInt(SearchSec/60.f);
+			const int32 SearchRem=FMath::FloorToInt(FMath::Fmod(SearchSec,60.f));
+			const bool bAccept=PS->MatchAcceptEndsAt>0.f;
+			DrawRect(FLinearColor(.015f,.025f,.04f,.72f),0,0,Canvas->SizeX,Canvas->SizeY);
+			Rect(HubInk,250,150,500,360);
+			Rect(HubAccent,250,150,500,3);
+			Text(bAccept ? TEXT("МАТЧ НАЙДЕН") : TEXT("ПОИСК МАТЧА"),280,180,1.6f,HubAccent);
+			Text(TrialNames[FMath::Clamp(PS->QueuedTrial,0,2)],280,230,1.2f,FLinearColor::White);
+			Text(FString::Printf(TEXT("В очереди: %d / %d"),PS->QueuePopulation,Cap),280,275,1.f,HubMuted);
+			Text(FString::Printf(TEXT("Время поиска: %02d:%02d"),SearchMin,SearchRem),280,315,1.1f,FLinearColor::White);
+			if (bAccept)
+			{
+				const float Left=FMath::Max(0.f,PS->MatchAcceptEndsAt-PS->ServerTime());
+				Text(PS->bMatchAccepted
+					? TEXT("Принято. Ожидание остальных…")
+					: FString::Printf(TEXT("Примите игру: %.0f с"),Left),280,360,1.1f,PS->bMatchAccepted?HubMuted:FLinearColor(1.f,.75f,.2f));
+				if (!PS->bMatchAccepted)
+				{
+					Rect(FLinearColor(.08f,.35f,.22f),280,410,200,48);
+					Text(TEXT("ПРИНЯТЬ"),300,424,1.f,FLinearColor::White);
+					AddHitBox(FVector2D(X+280*S,Y+410*S),FVector2D(200*S,48*S),TEXT("AcceptMatchSearch"),true);
+				}
+				Rect(FLinearColor(.28f,.1f,.1f),500,410,200,48);
+				Text(TEXT("ОТМЕНА"),530,424,1.f,FLinearColor::White);
+				AddHitBox(FVector2D(X+500*S,Y+410*S),FVector2D(200*S,48*S),TEXT("CancelMatchSearch"),true);
+			}
+			else
+			{
+				Text(TEXT("Соло и группы ищут вместе. Можно ждать здесь."),280,360,.85f,HubMuted);
+				Rect(FLinearColor(.28f,.1f,.1f),280,410,200,48);
+				Text(TEXT("ОТМЕНИТЬ"),300,424,1.f,FLinearColor::White);
+				AddHitBox(FVector2D(X+280*S,Y+410*S),FVector2D(200*S,48*S),TEXT("CancelMatchSearch"),true);
+			}
+			return;
+		}
         const FVector2D PausePosition(Canvas->SizeX-184*S,16*S), PauseSize(160*S,44*S);
         float MouseX=0,MouseY=0;
         const bool bHover=PC->bShowMouseCursor && PC->GetMousePosition(MouseX,MouseY) &&
             MouseX>=PausePosition.X && MouseX<=PausePosition.X+PauseSize.X &&
             MouseY>=PausePosition.Y && MouseY<=PausePosition.Y+PauseSize.Y;
-        DrawRect(bHover ? FLinearColor(.10f,.25f,.31f,1.f) : Ink,PausePosition.X,PausePosition.Y,PauseSize.X,PauseSize.Y);
-        DrawText(TEXT("ПАУЗА"),Accent,PausePosition.X+22*S,PausePosition.Y+12*S,GEngine->GetMediumFont(),S);
+        DrawRect(bHover ? FLinearColor(.10f,.25f,.31f,1.f) : HubInk,PausePosition.X,PausePosition.Y,PauseSize.X,PauseSize.Y);
+        DrawText(TEXT("ПАУЗА"),HubAccent,PausePosition.X+22*S,PausePosition.Y+12*S,GEngine->GetMediumFont(),S);
         AddHitBox(PausePosition,PauseSize,TEXT("OpenPause"),true);
-        DrawText(TEXT("ESC  Меню    TAB  Курсор    E  Испытания"),Muted,24*S,24*S,GEngine->GetSmallFont(),.9f*S);
-        auto* PS=PC->GetPlayerState<ATowerPlayerState>();
+        DrawText(TEXT("ESC  Меню    TAB  Курсор    E  Испытания"),HubMuted,24*S,24*S,GEngine->GetSmallFont(),.9f*S);
         if (PS)
         {
             const auto& Pool=GetDefault<UTowerAbilityPool>()->Skills;
             const float Width=640.f*S, Left=(Canvas->SizeX-Width)*.5f, Bottom=Canvas->SizeY-86*S;
-            DrawRect(Ink,Left,Bottom-16*S,Width,4*S);
-            DrawRect(Accent,Left,Bottom-16*S,Width*FMath::Clamp(PS->Health()/100.f,0.f,1.f),4*S);
+            DrawRect(HubInk,Left,Bottom-16*S,Width,4*S);
+            DrawRect(HubAccent,Left,Bottom-16*S,Width*FMath::Clamp(PS->Health()/100.f,0.f,1.f),4*S);
             DrawText(FString::Printf(TEXT("%.0f"),PS->Health()),FLinearColor::White,Left,Bottom-37*S,GEngine->GetSmallFont(),.9f*S);
             for (int32 I=0;I<FMath::Min(4,PS->SkillIds.Num());++I)
             {
@@ -388,25 +481,25 @@ void ATowerHubHUD::DrawHUD()
                 const auto& Skill=Pool[PS->SkillIds[I]];
                 const float A=Left+I*160*S;
                 const float Remaining=PS->ReadyAt.IsValidIndex(I) ? FMath::Max(0.f,PS->ReadyAt[I]-PS->ServerTime()):0;
-                DrawRect(Ink,A,Bottom,154*S,62*S);
-                DrawRect(Remaining>0 ? Muted : Skill.Color,A,Bottom,154*S,2*S);
+                DrawRect(HubInk,A,Bottom,154*S,62*S);
+                DrawRect(Remaining>0 ? HubMuted : Skill.Color,A,Bottom,154*S,2*S);
                 const FString Key=I==3 ? TEXT("R") : FString::FromInt(I+1);
-                DrawText(Key,Remaining>0 ? Muted : FLinearColor::White,A+10*S,Bottom+8*S,GEngine->GetMediumFont(),S);
-                if (Remaining>0) DrawText(FString::Printf(TEXT("%.1f"),Remaining),Muted,A+103*S,Bottom+9*S,GEngine->GetSmallFont(),S);
+                DrawText(Key,Remaining>0 ? HubMuted : FLinearColor::White,A+10*S,Bottom+8*S,GEngine->GetMediumFont(),S);
+                if (Remaining>0) DrawText(FString::Printf(TEXT("%.1f"),Remaining),HubMuted,A+103*S,Bottom+9*S,GEngine->GetSmallFont(),S);
                 float TextWidth=0,TextHeight=0;
                 GetTextSize(Skill.Title,TextWidth,TextHeight,GEngine->GetSmallFont(),1.f);
                 const float FontScale=FMath::Min(.9f,134.f/FMath::Max(1.f,TextWidth));
-                DrawText(Skill.Title,Remaining>0 ? Muted : FLinearColor::White,A+10*S,Bottom+37*S,GEngine->GetSmallFont(),FontScale*S);
+                DrawText(Skill.Title,Remaining>0 ? HubMuted : FLinearColor::White,A+10*S,Bottom+37*S,GEngine->GetSmallFont(),FontScale*S);
             }
         }
 		return;
 	}
 	DrawRect(FLinearColor(0,0,0,.55f),0,0,Canvas->SizeX,Canvas->SizeY);
-	Rect(Ink,0,0,1000,660);
-	Rect(Accent,0,0,1000,3);
-	Text(TEXT("ONLINE TOWER"),36,30,1.2f,Accent);
+	Rect(HubInk,0,0,1000,660);
+	Rect(HubAccent,0,0,1000,3);
+	Text(TEXT("ONLINE TOWER"),36,30,1.2f,HubAccent);
 	Text(TEXT("ВЫБОР ИСПЫТАНИЯ"),36,76,2.f,FLinearColor::White);
-	Text(TEXT("Этаж 01 / Прототип хаба"),36,123,1.f,Muted);
+	Text(TEXT("Этаж 01 / Прототип хаба"),36,123,1.f,HubMuted);
 	Rect(FLinearColor(.1f,.15f,.2f),840,30,124,36);
 	Text(TEXT("ЗАКРЫТЬ / E"),850,39,.85f,FLinearColor::White);
 	AddHitBox(FVector2D(X+840*S,Y+30*S),FVector2D(124*S,36*S),TEXT("Close"),true);
@@ -417,19 +510,19 @@ void ATowerHubHUD::DrawHUD()
 		const float Left = 36+Index*CardWidth;
 		const bool bSelected = Index == SelectedTrial;
 		Rect(bSelected ? FLinearColor(.08f,.23f,.3f) : FLinearColor(.07f,.1f,.14f),Left,185,CardWidth-12,175);
-		if (bSelected) Rect(Accent,Left,185,CardWidth-12,3);
-		Text(FString::Printf(TEXT("0%d"),Index+1),Left+20,205,1.f,Accent);
+		if (bSelected) Rect(HubAccent,Left,185,CardWidth-12,3);
+		Text(FString::Printf(TEXT("0%d"),Index+1),Left+20,205,1.f,HubAccent);
 		Text(Trials[Index].Title.ToString(),Left+20,245,1.25f,FLinearColor::White);
-		Text(FString::Printf(TEXT("Игроков: %d"),Trials[Index].MaxPlayers),Left+20,289,1.f,Muted);
-		Text(bSelected ? TEXT("ВЫБРАНО") : TEXT("ВЫБРАТЬ"),Left+20,327,.8f,bSelected ? Accent : Muted);
+		Text(FString::Printf(TEXT("Игроков: %d"),Trials[Index].MaxPlayers),Left+20,289,1.f,HubMuted);
+		Text(bSelected ? TEXT("ВЫБРАНО") : TEXT("ВЫБРАТЬ"),Left+20,327,.8f,bSelected ? HubAccent : HubMuted);
 		AddHitBox(FVector2D(X+Left*S,Y+185*S),FVector2D((CardWidth-12)*S,175*S),*FString::Printf(TEXT("Trial%d"),Index),true);
 	}
 	if (Trials.IsValidIndex(SelectedTrial))
 	{
 		Text(Trials[SelectedTrial].Description.ToString(),36,397,1.f,FLinearColor::White);
-		Text(TEXT("Сейчас портал ведёт на тренировочную площадку. Награды не выдаются."),36,440,.9f,Muted);
+		Text(TEXT("Сейчас портал ведёт на тренировочную площадку. Награды не выдаются."),36,440,.9f,HubMuted);
 	}
 	Rect(FLinearColor(.12f,.15f,.18f),36,506,928,62);
-	Text(TEXT("ЗАКРОЙ МЕНЮ И ВОЙДИ В СВЕТЯЩИЙСЯ ПОРТАЛ"),58,526,1.f,Accent);
-	Text(TEXT("Выбор: мышь или 1 / 2 / 3     Закрыть: E / Esc"),36,607,.9f,Accent);
+	Text(TEXT("ЗАКРОЙ МЕНЮ И ВОЙДИ В СВЕТЯЩИЙСЯ ПОРТАЛ"),58,526,1.f,HubAccent);
+	Text(TEXT("Выбор: мышь или 1 / 2 / 3     Закрыть: E / Esc"),36,607,.9f,HubAccent);
 }

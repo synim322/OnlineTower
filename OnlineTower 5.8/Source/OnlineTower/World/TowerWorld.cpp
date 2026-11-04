@@ -4,6 +4,7 @@
 #include "TowerHub.h"
 #include "TowerAbilities.h"
 #include "TowerPartyComponent.h"
+#include "Trials/TowerMatchmaking.h"
 #include "GameFramework/GameStateBase.h"
 #include "Kismet/GameplayStatics.h"
 #include "Components/BoxComponent.h"
@@ -27,7 +28,7 @@ FVector TowerHubOrigin() { return FVector(0,0,10000); }
 // Separate environments by two kilometres so adjacent runtime sets do not float in each other's sky.
 FVector TowerTrialLocation(int32 Trial) { return TowerHubOrigin()+FVector(200000, (Trial-1)*200000,120); }
 
-void BuildTowerEnvironment(AActor* Actor, int32 Zone)
+void BuildTowerEnvironment(AActor* Actor, int32 Zone, bool bIncludeGlobalLighting)
 {
     Actor->SetRootComponent(Actor->CreateDefaultSubobject<USceneComponent>(TEXT("Root")));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> Cube(TEXT("/Engine/BasicShapes/Cube.Cube"));
@@ -338,6 +339,7 @@ void BuildTowerEnvironment(AActor* Actor, int32 Zone)
     }
 
     }
+    if (!bIncludeGlobalLighting) return;
     auto* Sun=Actor->CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("Sun"));
     Sun->SetupAttachment(Actor->GetRootComponent()); Sun->SetRelativeRotation(FRotator(-38,-35,0));
     Sun->SetAtmosphereSunLight(true); Sun->SetIntensity(6); Sun->SetLightColor(FLinearColor(1,.91,.78));
@@ -388,7 +390,7 @@ void ATowerPortal::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
 }
 void ATowerPortal::UpdateLabel()
 {
-	const TCHAR* Names[]={TEXT("DUNGEON / TRAINING"),TEXT("DUEL / TRAINING"),TEXT("FINAL / TRAINING")};
+ const TCHAR* Names[]={TEXT("DUNGEON / 5 PLAYERS"),TEXT("DUEL / 1 VS 1"),TEXT("FINAL / 12 PLAYERS")};
 	Label->SetText(FText::FromString(DestinationTrial>=0 && DestinationTrial<3 ? Names[DestinationTrial] : TEXT("RETURN TO HUB")));
 }
 void ATowerPortal::Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiveComponent* OtherComponent,int32 BodyIndex,bool bSweep,const FHitResult& Hit)
@@ -403,6 +405,16 @@ void ATowerPortal::Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiv
  {
   if (Party && Now >= NextNoticeAt) { Party->ClientNotice(Message); NextNoticeAt = Now + 2; }
  };
+ if (GetNetMode()!=NM_Standalone)
+ {
+  if (!Party || !Party->IsAuthenticated()) { Notice(TEXT("Для поиска матча войдите в аккаунт.")); return; }
+  if (auto* Matchmaking=GetWorld()->GetSubsystem<UTowerMatchmakingSubsystem>())
+  {
+   if (DestinationTrial<0) Matchmaking->ReturnToHub(PC);
+   else if (Character->MatchQueueBlockedPortal.Get()!=this) Matchmaking->RequestQueue(PC,DestinationTrial);
+  }
+  return;
+ }
  TArray<ATowerCharacter*> Group;
  Group.Add(Character);
  if (GetNetMode() != NM_Standalone)
@@ -421,7 +433,7 @@ void ATowerPortal::Enter(UPrimitiveComponent* Overlapped,AActor* Other,UPrimitiv
    }
   }
  }
- const int32 Capacity = DestinationTrial == 0 ? 4 : DestinationTrial == 1 ? 2 : 12;
+ const int32 Capacity = DestinationTrial == 0 ? 5 : DestinationTrial == 1 ? 2 : 12;
  if (DestinationTrial >= 0 && Group.Num() > Capacity) { Notice(TEXT("В этом испытании недостаточно мест для всей группы.")); return; }
  if (TowerMaps::GetZone(GetWorld()) != -2)
  {

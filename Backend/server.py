@@ -13,6 +13,8 @@ import sqlite3
 import threading
 import time
 import uuid
+from urllib.parse import urlsplit, parse_qs
+from social import Social, load_registry
 
 ITERATIONS = 600_000
 SESSION_SECONDS = 86400
@@ -39,7 +41,6 @@ class Accounts:
                     token_hash TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id),
                     expires_at INTEGER NOT NULL);
                 CREATE INDEX IF NOT EXISTS session_expiry ON sessions(expires_at);
-                PRAGMA user_version=1;
             """)
 
     @contextmanager
@@ -117,8 +118,10 @@ class Accounts:
 class AccountServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, database):
+    def __init__(self, address, database, servers_file=None, registry=None):
         self.accounts = Accounts(database)
+        self.social = Social(self.accounts, registry if registry is not None else load_registry(
+            servers_file or Path(database).parent / "servers.json"), ApiError)
         self.auth_attempts = deque()
         self.attempt_lock = threading.Lock()
         self.hash_slots = threading.BoundedSemaphore(4)
@@ -179,8 +182,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self):
         try:
+            parsed = urlsplit(self.path)
             if self.command == "GET" and self.path == "/health":
-                result, status = {"ok": True}, 200
+                result, status = {"ok": True, "service": "OnlineTower", "social_version": 1}, 200
             elif self.command == "POST" and self.path in ("/v1/auth/register", "/v1/auth/login"):
                 self.server.check_rate()
                 body = self.body()
@@ -197,6 +201,16 @@ class Handler(BaseHTTPRequestHandler):
             elif self.command == "POST" and self.path == "/v1/auth/logout":
                 self.server.accounts.logout(self.token())
                 result, status = {"ok": True}, 200
+            elif parsed.path.startswith("/v1/social/"):
+                route = parsed.path.removeprefix("/v1/social/")
+                self.server.social.require(self.command == ("GET" if route in ("state", "search") else "POST"), 405, "Method not allowed.")
+                query = parse_qs(parsed.query).get("q", [""])[0]
+                result = self.server.social.client(route, self.token(), self.body() if self.command == "POST" else None, query)
+                status = 200
+            elif self.command == "POST" and parsed.path.startswith("/v1/server/"):
+                result = self.server.social.server(parsed.path.removeprefix("/v1/server/"),
+                    self.headers.get("X-Tower-Server-Id", ""), self.headers.get("X-Tower-Server-Key", ""), self.body())
+                status = 200
             else:
                 raise ApiError(404, "Route not found.")
             self.reply(status, result)
@@ -215,8 +229,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=18080)
     parser.add_argument("--db", type=Path, default=Path(__file__).parent / "data" / "tower.sqlite3")
+    parser.add_argument("--servers-file", type=Path, help="Trusted game-server registry; defaults beside the database")
     args = parser.parse_args()
-    server = AccountServer(("127.0.0.1", args.port), args.db)
+    server = AccountServer(("127.0.0.1", args.port), args.db, args.servers_file)
     print(f"OnlineTower accounts: http://127.0.0.1:{args.port} (local only)", flush=True)
     try:
         server.serve_forever()

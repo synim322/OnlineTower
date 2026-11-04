@@ -1,3 +1,4 @@
+param([ValidateRange(1,16)][int]$Players=5)
 # Run while the editor is closed so it cannot overwrite these user settings on exit.
 $ErrorActionPreference='Stop'
 $projectRoot=Split-Path $PSScriptRoot -Parent
@@ -5,7 +6,7 @@ $path=Join-Path $projectRoot 'Saved/Config/WindowsEditor/EditorPerProjectUserSet
 $section='[/Script/UnrealEd.LevelEditorPlaySettings]'
 $settings=[ordered]@{
     PlayNetMode='PIE_ListenServer'
-    PlayNumberOfClients='2'
+    PlayNumberOfClients="$Players"
     RunUnderOneProcess='True'
     LastExecutedPlayModeType='PlayMode_InEditorFloating'
     LastExecutedPlayModeLocation='PlayLocation_DefaultPlayerStart'
@@ -30,4 +31,4 @@ foreach($line in $lines){
 if(-not $found){$result.Add('');$result.Add($section);foreach($key in $settings.Keys){$result.Add("$key=$($settings[$key])")}}
 New-Item -ItemType Directory -Force -Path (Split-Path $path -Parent) | Out-Null
 $result | Set-Content -LiteralPath $path -Encoding UTF8
-Write-Output 'PIE configured: two windows, Listen Server, 960x640, mouse capture. Open /Game/Maps/Hub/L_Hub and press Play.'
+Write-Output "PIE configured: $Players windows, Listen Server, 960x640, mouse capture. Open /Game/Maps/Hub/L_Hub and press Play. Each window signs in separately."

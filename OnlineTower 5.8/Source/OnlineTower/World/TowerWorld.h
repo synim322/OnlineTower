@@ -6,7 +6,7 @@
 class UPrimitiveComponent;
 class UTextRenderComponent;
 class UStaticMeshComponent;
-void BuildTowerEnvironment(AActor* Actor, int32 Zone = -2);
+void BuildTowerEnvironment(AActor* Actor, int32 Zone = -2, bool bIncludeGlobalLighting = true);
 FVector TowerHubOrigin();
 FVector TowerTrialLocation(int32 Trial);
 

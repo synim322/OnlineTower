@@ -1,5 +1,7 @@
 # Окружение Tower — 30 октября 2026
 
+> Исторический отчёт: описание зон в общей Mainlvl ниже относится к прежней структуре. Теперь меню, хаб и испытания имеют отдельные карты — см. [PROJECT_STRUCTURE](PROJECT_STRUCTURE.md). Текущая оценка и план: [RU](PROJECT_STATUS_RU.md) / [EN](PROJECT_STATUS_EN.md); сетевой запуск — [MULTIPLAYER_IMPLEMENTATION](MULTIPLAYER_IMPLEMENTATION.md).
+
 Сцены создаются при запуске игры функцией `BuildTowerEnvironment` в `TowerWorld.cpp`, а не размещаются вручную в редакторской Mainlvl. Чтобы увидеть результат, запускайте Play или существующий Start-Hub-Multiplayer.cmd.
 
 ## Содержание
